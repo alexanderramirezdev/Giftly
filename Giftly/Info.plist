@@ -6,13 +6,5 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
-	<!-- DEV ONLY: allow plain-http to the local price proxy on localhost for
-	     simulator testing. REMOVE this whole NSAppTransportSecurity block once
-	     the proxy is deployed to a real https:// host. -->
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
 </dict>
 </plist>

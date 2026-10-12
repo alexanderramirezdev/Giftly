@@ -32,12 +32,11 @@ struct AddWishView: View {
     @State private var results: [RemoteProduct] = []
     @State private var errorMessage: String?
 
-    // LIVE: talks to the local price proxy (Fast SERP → real Google Shopping
-    // prices). For the shipped app, change this URL to your deployed https
-    // proxy. For simulator testing against localhost, see the ATS note in
-    // Info.plist (NSAllowsLocalNetworking).
+    // LIVE: talks to the deployed price proxy on Render (Fast SERP → real
+    // Google Shopping prices, cached). The app ships pointing here, so it
+    // works with no local server running.
     private let priceService: PriceService =
-        ProxyPriceService(baseURL: URL(string: "http://localhost:8787")!)
+        ProxyPriceService(baseURL: URL(string: "https://giftly-wto4.onrender.com")!)
 
     enum Phase { case typing, thinking, searching, results, error }
 
