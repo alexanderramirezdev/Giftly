@@ -1,0 +1,18 @@
+# Render blueprint for the Giftly price proxy.
+# When you connect this repo to Render, it reads this file and sets up the
+# service automatically. You still enter the SECRET values (token) in the
+# Render dashboard — they are intentionally NOT in this file.
+services:
+  - type: web
+    name: giftly-price-proxy
+    runtime: node
+    plan: free
+    rootDir: price-proxy
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: BRIGHTDATA_TOKEN
+        sync: false          # you set this secret in the Render dashboard
+      - key: SERP_ZONE
+        value: alex_api1     # not secret — the zone name

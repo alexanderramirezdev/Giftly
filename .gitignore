@@ -1,0 +1,21 @@
+# --- Secrets (NEVER commit) ---
+.env
+.env.*
+*.pem
+*.key
+
+# --- Node (price-proxy) ---
+price-proxy/node_modules/
+node_modules/
+npm-debug.log*
+
+# --- Xcode / Swift ---
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+.DS_Store
+*.swiftpm
+
+# --- Backup / scratch ---
+*.bak

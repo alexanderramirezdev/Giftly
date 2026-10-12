@@ -1,0 +1,17 @@
+{
+  "name": "giftly-price-proxy",
+  "version": "0.1.0",
+  "description": "Thin proxy holding the Bright Data key; the Giftly app calls this, never Bright Data directly.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "https-proxy-agent": "^7.0.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
