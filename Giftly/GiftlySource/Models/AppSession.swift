@@ -52,4 +52,11 @@ final class AppSession {
 
     /// Should we DEFAULT to kid role based on the declared age signal?
     var shouldDefaultToKid: Bool { declaredAgeIsChild == true }
+
+    /// The device AFFIRMATIVELY says this is an adult (iOS 18.4+ Declared Age
+    /// Range returned an adult band). Only this bypasses the parental gate for
+    /// "I'm a grown-up". nil (unknown) or child does NOT bypass — the gate is
+    /// required. This is the COPPA-safe default: a kid on an unknown-age device
+    /// cannot enter parent mode without passing the gate.
+    var deviceSaysAdult: Bool { declaredAgeIsChild == false }
 }

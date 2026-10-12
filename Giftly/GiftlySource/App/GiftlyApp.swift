@@ -43,6 +43,7 @@ struct GiftlyApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .tint(GiftlyTheme.cranberry)
                 .environment(session)
                 .environment(Entitlements.shared)
                 .environment(GiftIntelligence.shared)

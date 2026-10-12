@@ -25,14 +25,24 @@ struct OccasionDetailView: View {
                     BudgetBar(spentCents: occasion.committedTotalCents,
                               budgetCents: occasion.budgetCents)
                 }
+                .listRowBackground(GiftlyTheme.card)
             }
 
             Section("Wishlist") {
                 let wishes = (occasion.wishes ?? []).sorted { $0.createdAt < $1.createdAt }
                 if wishes.isEmpty {
-                    ContentUnavailableView("Empty list",
-                                           systemImage: "list.bullet",
-                                           description: Text("Add the first wish — type it in plain words."))
+                    ContentUnavailableView {
+                        Label("No wishes yet", systemImage: "sparkles")
+                    } description: {
+                        Text("Add the first wish in plain words. Giftly finds the best price while you keep going.")
+                    } actions: {
+                        Button { Haptics.tap(); showingAddWish = true } label: {
+                            Text("Add a wish")
+                        }
+                        .buttonStyle(GiftlyPrimaryButtonStyle())
+                        .frame(maxWidth: 240)
+                    }
+                    .listRowBackground(Color.clear)
                 }
                 ForEach(wishes, id: \.persistentModelID) { wish in
                     NavigationLink {
@@ -40,6 +50,8 @@ struct OccasionDetailView: View {
                     } label: {
                         WishRow(wish: wish)
                     }
+                    .listRowBackground(GiftlyTheme.card)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 .onDelete { offsets in
                     let wishes = (occasion.wishes ?? []).sorted { $0.createdAt < $1.createdAt }
@@ -47,6 +59,10 @@ struct OccasionDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .giftlyBackground()
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: occasion.wishCount)
+        .animation(.default, value: occasion.sortedWishesPicked)
         .navigationTitle(occasion.title)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -93,25 +109,54 @@ struct WishRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            statusIcon
-            VStack(alignment: .leading, spacing: 2) {
+            // Thumbnail if we have a chosen product, else a status icon.
+            if let m = wish.chosenMatch {
+                ProductThumbnail(urlString: m.imageURLString, size: 44)
+            } else {
+                statusIcon
+                    .frame(width: 44, height: 44)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(.quaternary))
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(wish.rawText).font(.body.weight(.medium)).lineLimit(1)
-                if let m = wish.chosenMatch {
-                    Text("\(m.retailer) · \(m.formattedPrice)")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text(wish.status.display).font(.caption).foregroundStyle(.secondary)
-                }
+                subtitle
             }
             Spacer()
+            if wish.status == .finding {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder private var subtitle: some View {
+        switch wish.status {
+        case .matched, .bought:
+            if let m = wish.chosenMatch {
+                Text("\(m.retailer) · \(m.formattedPrice)")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text(wish.status.display).font(.caption).foregroundStyle(.secondary)
+            }
+        case .finding:
+            Text(wish.status.display)
+                .font(.caption).foregroundStyle(.tint)
+        case .notFound:
+            Text("Tap to search again")
+                .font(.caption).foregroundStyle(.secondary)
+        case .idea:
+            Text("Idea").font(.caption).foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder private var statusIcon: some View {
         switch wish.status {
-        case .idea:    Image(systemName: "lightbulb").foregroundStyle(.yellow)
-        case .matched: Image(systemName: "cart").foregroundStyle(.tint)
-        case .bought:  Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .idea:     Image(systemName: "lightbulb").foregroundStyle(.yellow)
+        case .finding:  Image(systemName: "sparkles").foregroundStyle(.tint)
+        case .matched:  Image(systemName: "cart").foregroundStyle(.tint)
+        case .bought:   Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .notFound: Image(systemName: "questionmark").foregroundStyle(.secondary)
         }
     }
 }

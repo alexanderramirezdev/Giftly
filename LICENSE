@@ -1,0 +1,42 @@
+Copyright (c) 2026 Alexander Ramirez (Ramirez Labs). All rights reserved.
+
+This source code is made publicly available for the purposes of reading,
+evaluation, education, and reference, for example, by prospective employers,
+collaborators, and other developers who wish to study how the application is
+built.
+
+Permission is granted to view and clone this repository, and to compile and run
+the application locally for the sole purpose of evaluating this source code.
+
+No other rights are granted. Without prior written permission from the copyright
+holder, you may not:
+
+  1. Redistribute this source code or any substantial portion of it, whether
+     modified or unmodified;
+  2. Use this source code, in whole or in part, in any application, product, or
+     service, whether commercial or non-commercial;
+  3. Distribute or publish any application derived from or substantially based
+     on this source code, including to any application marketplace;
+  4. Use the names "Giftly" or "Ramirez Labs", or any associated marks, logos,
+     or app icons, in connection with any derivative work or any other product
+     or service.
+
+Application icons and other original visual assets included in this repository
+are likewise all rights reserved and are not licensed for reuse.
+
+The price proxy in this repository integrates with third party data providers
+(for example, Bright Data) under their own terms of service; nothing in this
+license grants any rights to those services or their data.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Giftly surfaces product prices and purchase links gathered from third party
+retailers and search results. Prices, availability, and links change constantly
+and may be inaccurate, incomplete, or out of date. Giftly is a convenience and
+organizing tool only; always confirm the current price and details on the
+retailer's own site before making any purchase.

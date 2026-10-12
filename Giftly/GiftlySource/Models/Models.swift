@@ -115,6 +115,34 @@ final class Occasion {
     var committedTotalCents: Int {
         (wishes ?? []).compactMap { $0.chosenMatch?.priceCents }.reduce(0, +)
     }
+
+    // MARK: Gift progress (drives the home-screen nudges)
+
+    var wishCount: Int { (wishes ?? []).count }
+
+    /// Wishes that have a chosen gift or are bought.
+    var sortedWishesPicked: Int {
+        (wishes ?? []).filter { $0.status == .matched || $0.status == .bought }.count
+    }
+
+    var boughtCount: Int {
+        (wishes ?? []).filter { $0.status == .bought }.count
+    }
+
+    /// True when the occasion is soon and nothing has been picked yet —
+    /// the signal the home screen nudges on.
+    var needsAttention: Bool {
+        let d = daysUntilNext
+        return d >= 0 && d <= 21 && sortedWishesPicked == 0
+    }
+
+    /// A short, warm status line for the home screen.
+    var progressLine: String {
+        if wishCount == 0 { return "No wishes yet" }
+        if boughtCount == wishCount { return "All set 🎁" }
+        if sortedWishesPicked == 0 { return "\(wishCount) wish\(wishCount == 1 ? "" : "es"), nothing picked yet" }
+        return "\(sortedWishesPicked) of \(wishCount) picked"
+    }
 }
 
 enum OccasionKind: String, CaseIterable, Codable {
@@ -204,14 +232,18 @@ final class Wish {
 
 enum WishStatus: String, CaseIterable, Codable {
     case idea       // just added, not yet searched
+    case finding    // background price fetch in flight
     case matched    // a product has been chosen
     case bought     // purchased — hide price pressure, mark done
+    case notFound   // searched, nothing came back
 
     var display: String {
         switch self {
-        case .idea:    return "Idea"
-        case .matched: return "Found it"
-        case .bought:  return "Bought"
+        case .idea:     return "Idea"
+        case .finding:  return "Finding the best price"
+        case .matched:  return "Found it"
+        case .bought:   return "Bought"
+        case .notFound: return "No match yet"
         }
     }
 }

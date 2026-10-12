@@ -90,9 +90,9 @@ final class GiftIntelligence {
                 )
                 return response.content
             }
-            return WishInterpretation(query: result.query,
+            return WishInterpretation(query: Self.noDashes(result.query),
                                       priceBand: result.priceBand,
-                                      blurb: result.blurb)
+                                      blurb: Self.noDashes(result.blurb))
         } catch {
             return Self.deterministicClean(trimmed)
         }
@@ -119,7 +119,7 @@ final class GiftIntelligence {
                 let response = try await session.respond(to: prompt, generating: GiftIdeaList.self)
                 return response.content.ideas
             }
-            return result.isEmpty ? Self.deterministicIdeas(interests) : result
+            return result.isEmpty ? Self.deterministicIdeas(interests) : result.map(Self.noDashes)
         } catch {
             return Self.deterministicIdeas(interests)
         }
@@ -135,17 +135,36 @@ final class GiftIntelligence {
     You convert a child's or parent's casual gift wish into a tight product \
     search query a shopping website would match. Strip filler words. Keep brand \
     names if present. Never invent a specific brand or model that wasn't implied. \
-    Keep it to 2-6 words.
+    Keep it to 2 to 6 words. Never use dashes, hyphens, or em dashes in any \
+    output; write plain words separated by spaces or commas.
     """
 
     private static let ideaInstructions = """
     You suggest thoughtful, specific, buyable gift ideas based on a person's \
-    interests. Avoid vague categories like "a book" — name the kind of thing. \
-    Keep each idea short. Never suggest anything unsafe or age-inappropriate.
+    interests. Avoid vague categories like "a book"; name the kind of thing. \
+    Keep each idea short. Never suggest anything unsafe or age inappropriate. \
+    Never use dashes, hyphens, or em dashes; write plain words separated by \
+    spaces or commas.
     """
     #endif
 
     // MARK: Deterministic fallbacks (no model available / timed out)
+
+    /// Hard guarantee that FM output carries no dashes, per product rule.
+    /// Em/en dashes between clauses become a comma; a hyphen between words
+    /// becomes a space. Collapses doubled spaces left behind.
+    static func noDashes(_ s: String) -> String {
+        var out = s
+            .replacingOccurrences(of: " — ", with: ", ")
+            .replacingOccurrences(of: " – ", with: ", ")
+            .replacingOccurrences(of: "—", with: ", ")
+            .replacingOccurrences(of: "–", with: ", ")
+            .replacingOccurrences(of: "-", with: " ")
+        while out.contains("  ") { out = out.replacingOccurrences(of: "  ", with: " ") }
+        return out
+            .replacingOccurrences(of: " ,", with: ",")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     private static func deterministicClean(_ raw: String) -> WishInterpretation {
         // Light cleanup: trim, collapse whitespace, drop obvious filler.

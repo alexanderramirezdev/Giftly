@@ -27,63 +27,26 @@ struct AddWishView: View {
     @Environment(AppSession.self) private var session
 
     @State private var rawText = ""
-    @State private var phase: Phase = .typing
-    @State private var cleaned: WishInterpretation?
-    @State private var results: [RemoteProduct] = []
-    @State private var errorMessage: String?
 
-    // LIVE: talks to the deployed price proxy on Render (Fast SERP → real
-    // Google Shopping prices, cached). The app ships pointing here, so it
-    // works with no local server running.
-    private let priceService: PriceService =
-        ProxyPriceService(baseURL: URL(string: "https://giftly-wto4.onrender.com")!)
-
-    enum Phase { case typing, thinking, searching, results, error }
+    private let priceService = GiftlyConfig.priceService
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("The wish") {
+                Section {
                     TextField("e.g. the lego race car with lights", text: $rawText, axis: .vertical)
                         .lineLimit(1...3)
-                        .disabled(phase == .thinking || phase == .searching)
+                        .submitLabel(.done)
+                } header: {
+                    Text("What do they want?")
+                } footer: {
+                    Text("Add it in plain words. Giftly finds the best price in the background while you keep going.")
                 }
 
-                if let c = cleaned, phase != .typing {
-                    Section("Searching for") {
-                        Text(c.query).font(.body.weight(.medium))
-                        if !c.blurb.isEmpty {
-                            Text(c.blurb).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                switch phase {
-                case .thinking:
-                    Section { Label("Figuring out what to search…", systemImage: "sparkles") }
-                case .searching:
-                    Section { HStack { ProgressView(); Text("Finding real prices…") } }
-                case .results:
-                    Section("Pick the right one") {
-                        ForEach(Array(results.enumerated()), id: \.offset) { _, product in
-                            Button { choose(product) } label: {
-                                ProductResultRow(product: product)
-                            }
-                        }
-                    }
-                case .error:
+                if !entitlements.isPlus {
                     Section {
-                        Label(errorMessage ?? "Something went wrong", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                        Button("Try again") { Task { await run() } }
-                    }
-                case .typing:
-                    EmptyView()
-                }
-
-                if !entitlements.isPlus && phase == .typing {
-                    Section {
-                        Text("\(entitlements.remainingFreeLookups) price lookups left this month")
+                        Label("\(entitlements.remainingFreeLookups) price lookups left this month",
+                              systemImage: "sparkles")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -92,58 +55,37 @@ struct AddWishView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    if phase == .typing {
-                        Button("Find it") { Task { await run() } }
-                            .disabled(rawText.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
+                    Button("Add") { addAndFetch() }
+                        .disabled(rawText.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .fontWeight(.semibold)
                 }
             }
         }
     }
 
-    // The pipeline: FM clean → (allowance check) → price search.
-    private func run() async {
-        guard session.networkAllowed else { return }   // belt & suspenders: never in kid mode
+    /// Add the wish INSTANTLY, then fetch its price in the background. The user
+    /// doesn't wait — the wish appears in the list with a "finding price" state
+    /// and quietly fills in. This is the core "alive" behavior.
+    private func addAndFetch() {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
 
-        phase = .thinking
-        let interpretation = await brain.clean(rawText)
-        cleaned = interpretation
-
-        guard entitlements.canDoPriceLookup else {
-            errorMessage = "You've used all your free price lookups this month. Upgrade to Plus for unlimited."
-            phase = .error
-            return
-        }
-
-        phase = .searching
-        do {
-            let result = try await priceService.search(query: interpretation.query, limit: 5)
-            entitlements.recordLookup()
-            results = result.products
-            phase = results.isEmpty ? .error : .results
-            if results.isEmpty { errorMessage = "No products found. Try rewording the wish." }
-        } catch {
-            errorMessage = (error as? PriceServiceError)?.errorDescription ?? error.localizedDescription
-            phase = .error
-        }
-    }
-
-    private func choose(_ product: RemoteProduct) {
-        let wish = Wish(rawText: rawText, addedBy: .parent, occasion: occasion)
-        wish.cleanedQuery = cleaned?.query ?? rawText
-        let match = ProductMatch(title: product.title,
-                                 priceCents: product.priceCents,
-                                 currencyCode: product.currencyCode,
-                                 retailer: product.retailer,
-                                 buyURLString: product.buyURL,
-                                 imageURLString: product.imageURL ?? "")
-        match.isChosen = true
-        match.wish = wish
-        wish.matches = [match]
-        wish.chosenMatch = match
-        wish.status = .matched
+        let wish = Wish(rawText: text, addedBy: .parent, occasion: occasion)
+        wish.status = session.networkAllowed ? .finding : .idea
         context.insert(wish)
-        dismiss()
+        Haptics.tap()
+        dismiss()   // back to the list immediately
+
+        guard session.networkAllowed else { return }
+        Task {
+            await WishFetcher.fetchPrice(
+                for: wish,
+                using: brain,
+                priceService: priceService,
+                entitlements: entitlements,
+                autoPick: true
+            )
+        }
     }
 }
 
@@ -173,28 +115,44 @@ struct ProductResultRow: View {
 struct WishDetailView: View {
     @Bindable var wish: Wish
     @Environment(\.openURL) private var openURL
+    @Environment(GiftIntelligence.self) private var brain
+    @Environment(Entitlements.self) private var entitlements
+    @Environment(AppSession.self) private var session
 
     var body: some View {
         List {
             Section("Wish") {
                 Text(wish.rawText).font(.body)
                 if !wish.cleanedQuery.isEmpty {
-                    Text("Searched: \(wish.cleanedQuery)")
+                    Text("Searched for: \(wish.cleanedQuery)")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if wish.status == .finding {
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Finding the best price…").foregroundStyle(.secondary)
+                    }
                 }
             }
 
             if let match = wish.chosenMatch {
                 Section("Chosen gift") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(match.title).font(.body.weight(.medium))
-                        Text("\(match.retailer) · \(match.formattedPrice)")
-                            .foregroundStyle(.secondary)
-                        Text("Price updated \(match.fetchedAt.formatted(.relative(presentation: .named)))")
-                            .font(.caption2).foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        ProductThumbnail(urlString: match.imageURLString, size: 56)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(match.title).font(.body.weight(.medium)).lineLimit(3)
+                            Text("\(match.retailer) · \(match.formattedPrice)")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Text("Updated \(match.fetchedAt.formatted(.relative(presentation: .named)))")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                     if let url = match.buyURL {
                         Button {
+                            Haptics.tap()
                             openURL(url)
                         } label: {
                             Label("Open to buy", systemImage: "safari")
@@ -203,14 +161,68 @@ struct WishDetailView: View {
                 }
             }
 
+            // Other candidates the parent can switch to.
+            let others = (wish.matches ?? []).filter { $0 !== wish.chosenMatch }
+            if !others.isEmpty {
+                Section("Other options") {
+                    ForEach(others, id: \.persistentModelID) { m in
+                        Button {
+                            Haptics.tap()
+                            wish.chosenMatch?.isChosen = false
+                            m.isChosen = true
+                            wish.chosenMatch = m
+                            if wish.status != .bought { wish.status = .matched }
+                        } label: {
+                            HStack(spacing: 12) {
+                                ProductThumbnail(urlString: m.imageURLString, size: 44)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(m.title).font(.subheadline).lineLimit(2).foregroundStyle(.primary)
+                                    Text(m.retailer).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(m.formattedPrice).font(.subheadline.monospacedDigit()).foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if wish.status == .notFound {
+                Section {
+                    Label("Couldn't find a match yet.", systemImage: "questionmark.circle")
+                        .foregroundStyle(.secondary)
+                    Button {
+                        retry()
+                    } label: {
+                        Label("Search again", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(!session.networkAllowed)
+                }
+            }
+
             Section {
                 Toggle("Bought it", isOn: Binding(
                     get: { wish.status == .bought },
-                    set: { wish.status = $0 ? .bought : (wish.chosenMatch != nil ? .matched : .idea) }
+                    set: {
+                        Haptics.success()
+                        wish.status = $0 ? .bought : (wish.chosenMatch != nil ? .matched : .idea)
+                    }
                 ))
             }
         }
+        .scrollContentBackground(.hidden)
+        .giftlyBackground()
         .navigationTitle("Wish")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func retry() {
+        Task {
+            await WishFetcher.fetchPrice(
+                for: wish, using: brain,
+                priceService: GiftlyConfig.priceService,
+                entitlements: entitlements, autoPick: true
+            )
+        }
     }
 }

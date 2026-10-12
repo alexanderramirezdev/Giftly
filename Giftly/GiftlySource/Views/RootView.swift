@@ -37,7 +37,7 @@ struct RootView: View {
                 },
                 onCancel: { showingGate = false }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.large])
         }
     }
 }
@@ -70,13 +70,15 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 Button {
-                    // Parent requires the gate (unless the device age signal already says adult)
-                    if session.shouldDefaultToKid {
-                        showingGate = true
-                    } else {
+                    // COPPA-safe: entering grown-up mode ALWAYS requires the
+                    // parental gate, UNLESS the device affirmatively says adult.
+                    // Unknown age or child => gate required.
+                    if session.deviceSaysAdult {
                         session.role = .parent
                         session.clearGate()
                         session.hasCompletedOnboarding = true
+                    } else {
+                        showingGate = true
                     }
                 } label: {
                     Label("I'm a grown-up", systemImage: "person.fill")
@@ -102,6 +104,7 @@ struct OnboardingView: View {
         .padding()
         .frame(maxWidth: 640)                     // iPad: constrain-and-center
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .giftlyBackground(.full)
         .sheet(isPresented: $showingGate) {
             ParentalGateView(
                 onSuccess: {
@@ -112,7 +115,7 @@ struct OnboardingView: View {
                 },
                 onCancel: { showingGate = false }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.large])
         }
     }
 }

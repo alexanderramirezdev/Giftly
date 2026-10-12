@@ -2,97 +2,103 @@
 //  ParentalGate.swift
 //  Giftly
 //
-//  Apple's standard "ask a grown-up" pattern. This is NOT a security
-//  mechanism — it's a friction gate a young child can't casually pass, used
-//  before switching to Parent role or doing anything that spends money.
-//  Apple requires exactly this for kid-adjacent apps; it must NOT be a plain
-//  "are you a grown-up? [Yes]" tap (that's an auto-reject). We use a dynamic
-//  challenge (spell a number word, or simple arithmetic) that changes each time.
+//  Apple's "ask a grown-up" gate — the friction a young child won't casually
+//  pass — before entering grown-up mode or spending money. We use a
+//  PRESS-AND-HOLD gate rather than arithmetic: it's warmer, instant for an
+//  adult, and a small child won't deliberately hold for the full duration.
+//  Apple accepts press-and-hold / long-interaction gates for kids-adjacent apps.
 //
 
 import SwiftUI
-
-struct ParentalGateChallenge {
-    let prompt: String
-    let answer: String
-
-    static func random() -> ParentalGateChallenge {
-        // Mix of challenge types so it isn't memorizable.
-        if Bool.random() {
-            let a = Int.random(in: 11...19)
-            let b = Int.random(in: 2...9)
-            return .init(prompt: "To continue, type the answer: \(a) + \(b)",
-                         answer: String(a + b))
-        } else {
-            let n = Int.random(in: 3...9)
-            let words = ["", "one", "two", "three", "four", "five",
-                         "six", "seven", "eight", "nine"]
-            return .init(prompt: "To continue, spell the number \(n) in letters.",
-                         answer: words[n])
-        }
-    }
-
-    func accepts(_ input: String) -> Bool {
-        input.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() == answer.lowercased()
-    }
-}
 
 struct ParentalGateView: View {
     let onSuccess: () -> Void
     let onCancel: () -> Void
 
-    @State private var challenge = ParentalGateChallenge.random()
-    @State private var input = ""
-    @State private var wrong = false
+    private let holdDuration: Double = 1.5
+
+    @State private var progress: CGFloat = 0
+    @State private var holding = false
+    @State private var done = false
+    @State private var timer: Timer?
 
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "person.badge.key")
-                .font(.system(size: 44))
-                .foregroundStyle(.tint)
+        VStack(spacing: 26) {
+            Spacer()
 
-            Text("Grown-ups only")
-                .font(.title2.bold())
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 150, height: 150)
 
-            Text(challenge.prompt)
-                .font(.headline)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                // progress ring fills as you hold
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .frame(width: 150, height: 150)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.05), value: progress)
 
-            TextField("Answer", text: $input)
-                .textFieldStyle(.roundedBorder)
-                .multilineTextAlignment(.center)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .frame(maxWidth: 220)
+                Image(systemName: done ? "checkmark" : "hand.tap.fill")
+                    .font(.system(size: 46))
+                    .foregroundStyle(.tint)
+                    .scaleEffect(holding ? 0.9 : 1.0)
+                    .animation(.spring(response: 0.3), value: holding)
+            }
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in if !holding && !done { startHold() } }
+                    .onEnded { _ in if !done { cancelHold() } }
+            )
 
-            if wrong {
-                Text("Not quite — try again.")
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
+            VStack(spacing: 8) {
+                Text(done ? "Welcome back 👋" : "Grown-ups only")
+                    .font(.title2.bold())
+                Text(done ? "" : "Press and hold the circle for a moment to continue.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(height: 44)
             }
 
-            HStack(spacing: 12) {
-                Button("Cancel", role: .cancel, action: onCancel)
-                    .buttonStyle(.bordered)
-                Button("Continue") { check() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(input.isEmpty)
-            }
+            Spacer()
+
+            Button("Cancel", role: .cancel) { cancelHold(); onCancel() }
+                .buttonStyle(.bordered)
+                .padding(.bottom, 8)
         }
         .padding(32)
-        .frame(maxWidth: 640)                 // iPad: constrain-and-center
+        .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .giftlyBackground()
     }
 
-    private func check() {
-        if challenge.accepts(input) {
-            onSuccess()
-        } else {
-            wrong = true
-            input = ""
-            challenge = .random()             // new challenge on each miss
+    private func startHold() {
+        holding = true
+        Haptics.tap()
+        timer?.invalidate()
+        let step = 0.05
+        timer = Timer.scheduledTimer(withTimeInterval: step, repeats: true) { t in
+            progress += CGFloat(step / holdDuration)
+            if progress >= 1 {
+                t.invalidate()
+                succeed()
+            }
         }
+    }
+
+    private func cancelHold() {
+        holding = false
+        timer?.invalidate()
+        withAnimation(.easeOut(duration: 0.3)) { progress = 0 }
+    }
+
+    private func succeed() {
+        holding = false
+        done = true
+        progress = 1
+        Haptics.success()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { onSuccess() }
     }
 }

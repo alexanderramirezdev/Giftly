@@ -82,6 +82,7 @@ struct KidHomeView: View {
             .padding()
             .frame(maxWidth: 640)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .giftlyBackground()
             .navigationTitle("My Wishes")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
