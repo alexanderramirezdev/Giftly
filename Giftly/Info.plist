@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Giftly uses the camera to scan your kid's wish list. The photo is read on your iPhone and never uploaded.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Giftly uses Face ID to confirm a grown-up before opening parent mode or spending money.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

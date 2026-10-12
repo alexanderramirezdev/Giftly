@@ -11,13 +11,18 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppSession.self) private var session
+    @AppStorage(GiftlySeason.settingKey) private var seasonSetting = "auto"
 
     @State private var showingGate = false
 
     var body: some View {
         Group {
             if !session.hasCompletedOnboarding {
-                OnboardingView()
+                if AppSession.kidModeEnabled {
+                    OnboardingView()
+                } else {
+                    WorkshopWelcomeView()
+                }
             } else {
                 switch session.role {
                 case .parent:
@@ -39,6 +44,8 @@ struct RootView: View {
             )
             .presentationDetents([.large])
         }
+        // The app's accent follows the season (or the parent's pick in Settings).
+        .tint(GiftlySeason.resolve(setting: seasonSetting).accent)
     }
 }
 
@@ -76,7 +83,7 @@ struct OnboardingView: View {
                     if session.deviceSaysAdult {
                         session.role = .parent
                         session.clearGate()
-                        session.hasCompletedOnboarding = true
+                        session.completeOnboarding()
                     } else {
                         showingGate = true
                     }
@@ -89,7 +96,7 @@ struct OnboardingView: View {
 
                 Button {
                     session.role = .kid
-                    session.hasCompletedOnboarding = true
+                    session.completeOnboarding()
                 } label: {
                     Label("I'm a kid", systemImage: "figure.child")
                         .frame(maxWidth: .infinity)
@@ -110,7 +117,7 @@ struct OnboardingView: View {
                 onSuccess: {
                     session.role = .parent
                     session.clearGate()
-                    session.hasCompletedOnboarding = true
+                    session.completeOnboarding()
                     showingGate = false
                 },
                 onCancel: { showingGate = false }

@@ -16,3 +16,9 @@ services:
         sync: false          # you set this secret in the Render dashboard
       - key: SERP_ZONE
         value: alex_api1     # not secret — the zone name
+      - key: GIFTLY_APP_KEY
+        sync: false          # secret: must match GiftlyConfig.appKey in the app
+      - key: GIFTLY_ADMIN_KEY
+        sync: false          # secret: unlocks /raw, ?debug=1 and /health details
+      - key: DAILY_CAP
+        value: "1500"        # max Bright Data calls per day, everyone combined

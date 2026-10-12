@@ -6,7 +6,7 @@
 //  single cozy space instead of a stack of blank-white sheets. Two intensities:
 //   • .full   — home screen: the warm wash + the living seasonal scene
 //   • .subtle — inner/detail screens: the warm wash + a faint ambient touch
-//               (a soft top glow and a few quiet snowflakes), nothing that
+//               (a soft top glow and a few quiet seasonal symbols), nothing that
 //               competes with content.
 //
 //  Use via the modifier: `.giftlyBackground()` or `.giftlyBackground(.full, season:)`.
@@ -22,15 +22,22 @@ struct GiftlyBackground: View {
     var giftFullness: Double = 1.0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(GiftlySeason.settingKey) private var seasonSetting = "auto"
+    @AppStorage(GiftlySeason.previewTouchKey) private var previewTouch = "none"
+
+    private var shownSeason: GiftlySeason {
+        season ?? GiftlySeason.shown(setting: seasonSetting, preview: previewTouch)
+    }
 
     var body: some View {
-        ZStack {
+        let washColor: Color = shownSeason.accent.opacity(0.05)
+        return ZStack {
             // Warm wash: cream base with a gentle vertical gradient so it isn't flat.
             LinearGradient(
                 colors: [
                     GiftlyTheme.background,
                     GiftlyTheme.background,
-                    GiftlyTheme.cranberry.opacity(0.045)
+                    washColor
                 ],
                 startPoint: .top, endPoint: .bottom
             )
@@ -46,7 +53,7 @@ struct GiftlyBackground: View {
             case .full:
                 GiftlyAtmosphereView(season: season, giftFullness: giftFullness)
             case .subtle:
-                SubtleAmbient(reduceMotion: reduceMotion)
+                SubtleAmbient(reduceMotion: reduceMotion, season: shownSeason)
             }
         }
         .ignoresSafeArea()
@@ -57,12 +64,24 @@ struct GiftlyBackground: View {
 /// Enough to feel alive, little enough to never distract from content.
 private struct SubtleAmbient: View {
     let reduceMotion: Bool
+    let season: GiftlySeason
+
+    /// Holiday and Snow Day get snowflakes, spring petals, summer sparkles, autumn leaves.
+    private var symbol: String {
+        switch season {
+        case .holiday, .snowDay: return "snowflake"
+        case .spring:            return "camera.macro"
+        case .summer:            return "sparkle"
+        case .autumn:            return "leaf.fill"
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 ForEach(0..<7, id: \.self) { i in
-                    FaintFlake(index: i, size: geo.size, reduceMotion: reduceMotion)
+                    FaintFlake(index: i, size: geo.size, reduceMotion: reduceMotion,
+                               symbol: symbol, tint: season.accent)
                 }
             }
         }
@@ -73,6 +92,8 @@ private struct FaintFlake: View {
     let index: Int
     let size: CGSize
     let reduceMotion: Bool
+    let symbol: String
+    let tint: Color
 
     private var startX: CGFloat {
         let seed = Double((index * 149) % 100) / 100.0
@@ -96,9 +117,9 @@ private struct FaintFlake: View {
             reduceMotion: reduceMotion,
             staticY: size.height * CGFloat(Double((index * 41) % 100) / 100.0)
         ) {
-            Image(systemName: "snowflake")
+            Image(systemName: symbol)
                 .font(.system(size: flakeSize))
-                .foregroundStyle(GiftlyTheme.evergreen.opacity(0.5))
+                .foregroundStyle(tint.opacity(0.6))
         }
     }
 }

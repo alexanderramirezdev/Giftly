@@ -27,6 +27,19 @@ final class Person {
     var colorHex: String = "#4C8BF5"       // avatar accent color
     var createdAt: Date = Date.now
 
+    // Richer profile. Every field is optional to fill, and every filled one
+    // sharpens the on-device gift ideas. It syncs only through the user's
+    // own iCloud.
+    var favoriteColors: String = ""
+    var favoriteStores: String = ""
+    var shirtSize: String = ""
+    var shoeSize: String = ""
+    var alreadyHas: String = ""            // things they own, so we don't double up
+    var dislikes: String = ""
+    var jobTitle: String = ""
+    var contactIdentifier: String = ""     // CNContact.identifier when imported from Contacts
+    @Attribute(.externalStorage) var photoData: Data? = nil
+
     // One Person → many Occasions
     @Relationship(deleteRule: .cascade, inverse: \Occasion.person)
     var occasions: [Occasion]? = []
@@ -50,6 +63,47 @@ final class Person {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
     }
+
+    var firstName: String {
+        name.split(separator: " ").first.map(String.init) ?? name
+    }
+
+    /// The things Pip can know about someone, and whether each is filled in.
+    var profileFacts: [ProfileFact] {
+        [
+            ProfileFact(label: "Relationship", filled: !relationship.isEmpty),
+            ProfileFact(label: "Age", filled: !ageBand.isEmpty),
+            ProfileFact(label: "Interests", filled: !interestsRaw.isEmpty),
+            ProfileFact(label: "Favorite colors", filled: !favoriteColors.isEmpty),
+            ProfileFact(label: "Favorite stores", filled: !favoriteStores.isEmpty),
+            ProfileFact(label: "Sizes", filled: !shirtSize.isEmpty || !shoeSize.isEmpty),
+            ProfileFact(label: "Already has", filled: !alreadyHas.isEmpty),
+            ProfileFact(label: "Doesn't like", filled: !dislikes.isEmpty)
+        ]
+    }
+
+    var profileFilledCount: Int { profileFacts.filter { $0.filled }.count }
+
+    /// Plain text profile handed to the on-device model. Only filled fields.
+    var profileSummary: String {
+        var lines: [String] = []
+        if !relationship.isEmpty { lines.append("Relationship to the gift giver: \(relationship)") }
+        if !ageBand.isEmpty { lines.append("Age group: \(ageBand)") }
+        if !jobTitle.isEmpty { lines.append("Works as: \(jobTitle)") }
+        if !interestsRaw.isEmpty { lines.append("Interests: \(interestsRaw)") }
+        if !favoriteColors.isEmpty { lines.append("Favorite colors: \(favoriteColors)") }
+        if !favoriteStores.isEmpty { lines.append("Favorite stores or brands: \(favoriteStores)") }
+        if !shirtSize.isEmpty { lines.append("Shirt size: \(shirtSize)") }
+        if !shoeSize.isEmpty { lines.append("Shoe size: \(shoeSize)") }
+        if !alreadyHas.isEmpty { lines.append("Already owns (do not suggest): \(alreadyHas)") }
+        if !dislikes.isEmpty { lines.append("Dislikes (avoid): \(dislikes)") }
+        return lines.joined(separator: "\n")
+    }
+}
+
+struct ProfileFact: Hashable {
+    let label: String
+    let filled: Bool
 }
 
 // MARK: - Occasion
@@ -64,6 +118,8 @@ final class Occasion {
     var repeatsAnnually: Bool = false       // birthdays/anniversaries recur; "just because" doesn't
     var budgetCents: Int = 0                // 0 = no budget set
     var createdAt: Date = Date.now
+    var inviteURLString: String = ""        // Apple Invites / Evite / any party link
+    var calendarEventID: String = ""        // EKEvent identifier when imported from Calendar
 
     // Occasion → Person (the recipient)
     var person: Person?
@@ -93,6 +149,15 @@ final class Occasion {
     }
 
     var hasBudget: Bool { budgetCents > 0 }
+
+    /// The party or event link, only if it's a real web link.
+    var inviteURL: URL? {
+        let trimmed = inviteURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http" else { return nil }
+        return url
+    }
 
     /// Days until the next occurrence of this occasion (handles annual repeats).
     var daysUntilNext: Int {
@@ -199,6 +264,11 @@ final class Wish {
     var addedByRaw: String = Role.parent.rawValue
     var note: String = ""                  // free note the parent can add
     var createdAt: Date = Date.now
+    var detailsRaw: String = ""            // details read from the wish: "LEGO · red · ages 6 to 8"
+    var matchReason: String = ""           // why Pip put the chosen product first
+    var giftNote: String = ""              // card message drafted with Pip
+    var statusNote: String = ""            // why there's no result (limit hit, offline, no match)
+    var suggestionsRaw: String = ""        // Pip's alternative searches, "a|b|c"
 
     // Wish → Occasion
     var occasion: Occasion?
@@ -217,6 +287,11 @@ final class Wish {
         self.addedByRaw = addedBy.rawValue
         self.occasion = occasion
         self.createdAt = .now
+    }
+
+    /// Pip's alternative searches when nothing matched.
+    var suggestions: [String] {
+        suggestionsRaw.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     var status: WishStatus {
@@ -263,6 +338,7 @@ final class ProductMatch {
     var buyURLString: String = ""
     var imageURLString: String = ""
     var fetchedAt: Date = Date.now         // for cache staleness
+    var resolvedURLString: String = ""     // the store's own product page, once found
     var isChosen: Bool = false
 
     // ProductMatch → Wish

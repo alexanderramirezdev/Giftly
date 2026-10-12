@@ -16,6 +16,7 @@ struct OccasionDetailView: View {
     @Bindable var occasion: Occasion
 
     @Environment(\.modelContext) private var context
+    @Environment(\.openURL) private var openURL
     @State private var showingAddWish = false
 
     var body: some View {
@@ -24,6 +25,15 @@ struct OccasionDetailView: View {
                 Section {
                     BudgetBar(spentCents: occasion.committedTotalCents,
                               budgetCents: occasion.budgetCents)
+                }
+                .listRowBackground(GiftlyTheme.card)
+            }
+
+            if let url = occasion.inviteURL {
+                Section {
+                    Link(destination: url) {
+                        Label("Open the invite", systemImage: "envelope.open")
+                    }
                 }
                 .listRowBackground(GiftlyTheme.card)
             }
@@ -37,7 +47,7 @@ struct OccasionDetailView: View {
                         Text("Add the first wish in plain words. Giftly finds the best price while you keep going.")
                     } actions: {
                         Button { Haptics.tap(); showingAddWish = true } label: {
-                            Text("Add a wish")
+                            Text("Add a gift idea")
                         }
                         .buttonStyle(GiftlyPrimaryButtonStyle())
                         .frame(maxWidth: 240)
@@ -51,6 +61,29 @@ struct OccasionDetailView: View {
                         WishRow(wish: wish)
                     }
                     .listRowBackground(GiftlyTheme.card)
+                    // Swipe right: mark bought, or jump straight to the store.
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button {
+                            Haptics.success()
+                            wish.status = wish.status == .bought
+                                ? (wish.chosenMatch != nil ? .matched : .idea)
+                                : .bought
+                        } label: {
+                            Label(wish.status == .bought ? "Not bought" : "Bought",
+                                  systemImage: "checkmark.circle")
+                        }
+                        .tint(GiftlyTheme.evergreen)
+
+                        if let match = wish.chosenMatch {
+                            Button {
+                                Task {
+                                    if let url = await StoreLinks.buyURL(for: match) { openURL(url) }
+                                }
+                            } label: {
+                                Label("Buy", systemImage: "bag")
+                            }
+                        }
+                    }
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 .onDelete { offsets in
@@ -60,6 +93,9 @@ struct OccasionDetailView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        // The event's own scene (balloons, hearts, caps, lights), with
+        // confetti on the day itself.
+        .background(OccasionScene(kind: occasion.kind, isToday: occasion.daysUntilNext == 0))
         .giftlyBackground()
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: occasion.wishCount)
         .animation(.default, value: occasion.sortedWishesPicked)
@@ -67,7 +103,7 @@ struct OccasionDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingAddWish = true } label: {
-                    Label("Add wish", systemImage: "plus")
+                    Label("Add a gift idea", systemImage: "plus")
                 }
             }
         }
@@ -83,7 +119,8 @@ struct BudgetBar: View {
 
     private var fraction: Double {
         guard budgetCents > 0 else { return 0 }
-        return min(1.2, Double(spentCents) / Double(budgetCents))
+        let ratio: Double = Double(spentCents) / Double(budgetCents)
+        return max(0.0, min(1.0, ratio))   // ProgressView only accepts 0...1; red color shows "over"
     }
     private var over: Bool { spentCents > budgetCents }
 
@@ -109,8 +146,12 @@ struct WishRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Thumbnail if we have a chosen product, else a status icon.
-            if let m = wish.chosenMatch {
+            // Pip runs the shelves while the price is found, then the
+            // product thumbnail, else a status icon.
+            if wish.status == .finding {
+                ElfView(pose: .running, size: 30)
+                    .frame(width: 44, height: 44)
+            } else if let m = wish.chosenMatch {
                 ProductThumbnail(urlString: m.imageURLString, size: 44)
             } else {
                 statusIcon
@@ -123,9 +164,6 @@ struct WishRow: View {
                 subtitle
             }
             Spacer()
-            if wish.status == .finding {
-                ProgressView().controlSize(.small)
-            }
         }
         .padding(.vertical, 2)
     }
@@ -140,13 +178,15 @@ struct WishRow: View {
                 Text(wish.status.display).font(.caption).foregroundStyle(.secondary)
             }
         case .finding:
-            Text(wish.status.display)
+            Text("\(Workshop.elfName) is checking the shelves…")
                 .font(.caption).foregroundStyle(.tint)
         case .notFound:
-            Text("Tap to search again")
-                .font(.caption).foregroundStyle(.secondary)
+            Text(wish.suggestions.isEmpty ? "No match yet, tap to try again" : "No exact match, tap for \(Workshop.elfName)'s ideas")
+                .font(.caption).foregroundStyle(.orange)
         case .idea:
-            Text("Idea").font(.caption).foregroundStyle(.secondary)
+            Text(wish.statusNote.isEmpty ? "Idea" : wish.statusNote)
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(2)
         }
     }
 
@@ -176,6 +216,7 @@ struct OccasionEditView: View {
     @State private var repeatsAnnually = true
     @State private var hasBudget = false
     @State private var budget = 100.0
+    @State private var inviteLink = ""
 
     var body: some View {
         NavigationStack {
@@ -195,6 +236,14 @@ struct OccasionEditView: View {
                     if hasBudget {
                         Stepper("$\(Int(budget))", value: $budget, in: 10...2000, step: 10)
                     }
+                }
+                Section {
+                    TextField("Invite link (Apple Invites, Evite…)", text: $inviteLink)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } footer: {
+                    Text("Paste the party link to keep it one tap away.")
                 }
             }
             .navigationTitle(occasion == nil ? "New Occasion" : "Edit Occasion")
@@ -218,6 +267,7 @@ struct OccasionEditView: View {
         title = o.title; kind = o.kind; date = o.date
         repeatsAnnually = o.repeatsAnnually
         hasBudget = o.hasBudget; budget = Double(o.budgetCents) / 100
+        inviteLink = o.inviteURLString
     }
 
     private func save() {
@@ -225,10 +275,12 @@ struct OccasionEditView: View {
         if let o = occasion {
             o.title = title; o.kind = kind; o.date = date
             o.repeatsAnnually = repeatsAnnually; o.budgetCents = cents
+            o.inviteURLString = inviteLink
         } else {
             let o = Occasion(title: title, kind: kind, date: date,
                              repeatsAnnually: repeatsAnnually,
                              budgetCents: cents, person: person)
+            o.inviteURLString = inviteLink
             context.insert(o)
         }
         dismiss()

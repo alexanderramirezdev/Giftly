@@ -165,3 +165,70 @@ seasons (spring/summer/autumn) on the existing engine.
 
 **Build note:** full builds happen in Xcode (SwiftData/#Preview macro plugins
 don't run from the CLI). Every source file is syntax-validated.
+
+---
+
+## Workshop update (Oct 2026): Pip, richer profiles, imports, gate
+
+**v1 is parent only.** `AppSession.kidModeEnabled` (false) skips the role
+picker, shows `WorkshopWelcomeView` on first launch, and hides the Kid mode
+button. Flip it to true for the January v2. All kid code stays in place.
+
+**Pip, the head elf** (`Views/Workshop/`): drawn in code, four poses (idle,
+reading, running, cheering), static under Reduce Motion. He greets you on home
+(on device line from facts only, template fallback), peeks from behind the
+winter tree, runs in a wish row while its price is found, and fills the wish
+detail while searching. `GiftBoxMark` gives each upcoming occasion a gift in
+the person's color that wiggles, glints, then pops open on the day.
+
+**Richer profiles.** Person now has favorite colors, stores, sizes, already
+has, doesn't like, job, contact photo. Pip's card shows how much he knows and
+what to fill next. Everything feeds the gift ideas.
+
+**Adding things** (Add menu on home):
+- Add a gift idea: one screen. Pick the person (or "+ New" to add them right
+  there), pick the occasion, type. Stays open for a whole list.
+- Scan a wish list (`ScanListView`, `ListScanner`): document camera or a photo,
+  Vision reads the text on device (handwriting too), Foundation Models turns it
+  into clean wishes and finds the child's name, the parent reviews and edits,
+  then every wish is added and priced one at a time.
+- Contacts: the system picker, no permission prompt, multi select. Brings name,
+  photo, birthday (repeating occasion, age group from the year, year not
+  stored), anniversaries, job.
+- Occasions take a pasted invite link (Apple Invites has no public API).
+
+**Grown-ups gate** (`ParentalGate.swift`): birth year, then Face ID or the
+device passcode. Falls back to the arithmetic challenge only if the device has
+no passcode. The year is never stored. Only reachable when kid mode is on.
+
+**Foundation Models** (`GiftIntelligence.swift`, all on device, all with plain
+fallbacks, all output passed through `noDashes`): wish details (brand, color,
+size, age, must haves), ranking the price results so autoPick lands on the best
+match with a reason ("Pip's pick"), ideas from the whole profile plus budget
+left and what's already listed, card notes in three tones, reading scanned
+wish lists, and Pip's home line. Pip's line is built from the real data first,
+then the model only rewrites the wording in his voice; every name, number and
+day word is checked and anything that drifts falls back to the template.
+
+**Info.plist** adds `NSCameraUsageDescription` (scanning) and
+`NSFaceIDUsageDescription` (grown-ups gate).
+
+## Seasons (FloraFang style)
+
+The home scene changes with the calendar, or the parent pins one in **Settings** (gear, top left).
+
+| Season | Dates | Scene | Holiday touches |
+|---|---|---|---|
+| Holiday Workshop | Black Friday to Jan 6 | Pine tree, elf crew, reindeer parade, snow | |
+| Snow Day | Jan 7 to Feb | Snowy hills, little pines, snowman | Valentine hearts (Feb 1 to 14) |
+| Spring Garden | Mar to May | Blossom tree, petals, butterflies | Easter eggs, Mother's Day tulips |
+| Summer | Jun to Aug | Sun, clouds, kite | Father's Day bunting |
+| Autumn Harvest | Sep to Thanksgiving | Autumn tree, pumpkins, falling leaves | Jack-o-lanterns, Thanksgiving leaf bunting |
+
+- The elf crew and reindeer appear only in the Holiday Workshop. The rest of the year Pip is off duty in a seasonal outfit (beanie and scarf, flower crown, sun hat, beret).
+- The app accent, the main button, background wash and inner screen symbols follow the season.
+- Occasion pages carry their own scene: balloons, confetti and cake for birthdays, hearts for anniversaries and weddings, tossed caps for graduations, pastel balloons for baby showers, lights and snow for Christmas. A confetti burst plays on the day.
+- The gift box in "Coming up" shows a hint of its event (balloon, heart, sparkle, holly).
+- Settings: season (Automatic or any of the five), Holiday touches on or off, and Preview a touch.
+- Code: `Support/GiftlySeasons.swift` (dates, Easter and Thanksgiving math), `Views/Atmosphere/SceneProps.swift` (drawing pieces), `SeasonScenes.swift`, `OccasionScene.swift`, `Views/SettingsView.swift`.
+

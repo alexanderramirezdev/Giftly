@@ -93,13 +93,24 @@ struct GiftlySectionHeader: View {
 
 struct GiftlyPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        GiftlyPrimaryButtonBody(configuration: configuration)
+    }
+}
+
+/// Reads the season so the main button wears the seasonal accent.
+private struct GiftlyPrimaryButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @AppStorage(GiftlySeason.settingKey) private var seasonSetting = "auto"
+
+    var body: some View {
+        let fillColor: Color = GiftlySeason.resolve(setting: seasonSetting).accent
+        return configuration.label
             .font(.body.weight(.semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(GiftlyTheme.cranberry)
+                    .fill(fillColor)
             )
             .foregroundStyle(.white)
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)

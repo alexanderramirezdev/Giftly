@@ -64,3 +64,38 @@ This file runs unchanged on Render / Railway / Fly.io / a small VM. Set
 (never commit them). Then point `ProxyPriceService(baseURL:)` at the public
 `https://` URL. Swap the in-memory cache for the host's KV/Redis if you want the
 cache to survive restarts.
+
+## Store links (`/resolve`)
+
+Google Shopping results only include Google's own product page, so the app
+asks `/resolve` for the store's real product page when someone taps Buy. It
+fetches that Google page through Bright Data and returns the first outbound
+link on the store's own domain, or `url: null` (the app then searches that
+store's site for the exact title). Results are cached for 2 days.
+
+Test it after deploying (debug shows what links were found):
+
+```bash
+curl "https://<your-render-host>/resolve?store=LEGO.com&debug=1&u=<a buyURL from /search>"
+```
+
+## Lockdown
+
+| Env var | What it does |
+|---|---|
+| `GIFTLY_APP_KEY` | The app sends it as `X-Giftly-Key`. Once set, requests without it get 401. Must match `GiftlyConfig.appKey`. |
+| `GIFTLY_ADMIN_KEY` | Send as `X-Giftly-Admin` to use `/raw`, `?debug=1` on `/resolve`, and see spend on `/health`. Unset means those stay off. |
+| `DAILY_CAP` | Max Bright Data calls per UTC day, everyone combined (default 1500). Cache hits are free. Past the cap the proxy answers 503 and the app shows its "couldn't reach" note. |
+
+Also built in: 40 searches and 60 store links per device per hour (429 after
+that), queries capped at 120 characters, and caches capped at 5,000 entries.
+
+The app key lives in the app binary, so a determined person can extract it;
+the rate limits and the daily cap are what bound spending. App Attest is the
+upgrade if that ever matters.
+
+Check it (admin):
+
+```bash
+curl -H "X-Giftly-Admin: <admin key>" https://<your-render-host>/health
+```

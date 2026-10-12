@@ -32,8 +32,13 @@ enum Role: String, Codable, CaseIterable {
 /// COPPA-relevant boundary.
 @Observable
 final class AppSession {
-    var role: Role = .kid                 // start locked-down; upgrade to parent via gate
-    var hasCompletedOnboarding: Bool = false
+    /// v1 ships parent only. Flip to true in v2 (January) to bring back the
+    /// role picker, kid mode and the parental gate. All kid code stays in the
+    /// project; this flag is the only switch.
+    static let kidModeEnabled = false
+
+    var role: Role = AppSession.kidModeEnabled ? .kid : .parent   // with kid mode on, start locked down
+    var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "giftly_onboarded")
 
     /// Set true for the duration of a parent session once the gate is passed.
     /// Reset to false whenever the app backgrounds, so a kid can't pick up an
@@ -45,7 +50,13 @@ final class AppSession {
     var declaredAgeIsChild: Bool? = nil
 
     func clearGate() { gateCleared = true }
-    func lockGate()  { gateCleared = false; role = .kid }
+    func lockGate()  { gateCleared = false; role = AppSession.kidModeEnabled ? .kid : .parent }
+
+    /// Marks first launch done and remembers it across launches.
+    func completeOnboarding() {
+        hasCompletedOnboarding = true
+        UserDefaults.standard.set(true, forKey: "giftly_onboarded")
+    }
 
     /// Can the current context touch the network / show prices?
     var networkAllowed: Bool { role == .parent }

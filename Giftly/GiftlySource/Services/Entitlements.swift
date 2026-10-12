@@ -13,6 +13,7 @@
 //
 
 import Foundation
+import StoreKit
 import SwiftUI
 
 @Observable
@@ -20,8 +21,14 @@ final class Entitlements {
 
     static let shared = Entitlements()
 
-    // Flip in previews/testing. In production this comes from StoreKit.
+    // In production this comes from StoreKit. Debug builds act as Plus so
+    // testing never runs into the monthly free limit (which made wishes come
+    // back empty with no explanation).
+    #if DEBUG
+    var isPlus: Bool = true
+    #else
     var isPlus: Bool = false
+    #endif
 
     // Free-tier allowance: how many price lookups per calendar month.
     let freeMonthlyLookups = 15
@@ -46,6 +53,17 @@ final class Entitlements {
     var allowsPriceDropAlerts: Bool { isPlus }
     var allowsUnlimitedPeople: Bool { isPlus }
     let freePeopleLimit = 3
+
+    /// TestFlight and Xcode builds get Plus, so beta testers never run into
+    /// the monthly free limit. App Store builds are unaffected.
+    func unlockForBetaIfNeeded() async {
+        guard !isPlus else { return }
+        guard let result = try? await AppTransaction.shared,
+              case .verified(let transaction) = result else { return }
+        if transaction.environment == .sandbox || transaction.environment == .xcode {
+            isPlus = true
+        }
+    }
 
     // MARK: Record usage
 

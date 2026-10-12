@@ -17,8 +17,11 @@
 //   curl "http://localhost:8787/search?q=lego+race+car&limit=5"
 
 import express from "express";
+import crypto from "node:crypto";
 
 const app = express();
+// Render sits behind a load balancer; trust it so req.ip is the real client.
+app.set("trust proxy", 1);
 
 // ---- Config (env vars, NOT in code) ----------------------------------------
 const TOKEN = process.env.BRIGHTDATA_TOKEN || "";   // Bearer API token
@@ -27,6 +30,78 @@ const PORT  = process.env.PORT || 8787;
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 2;       // 2 days
 
 const REQUEST_URL = "https://api.brightdata.com/request";
+
+// ---- Lockdown ---------------------------------------------------------------
+// GIFTLY_APP_KEY   shared key the app sends as X-Giftly-Key. When it's set,
+//                  requests without it get 401. (A key in an app binary can
+//                  be dug out, so the limits below are what actually cap spend.)
+// GIFTLY_ADMIN_KEY unlocks /raw and ?debug=1 via X-Giftly-Admin. Unset = off.
+// DAILY_CAP        max Bright Data calls per UTC day across everyone (cache
+//                  hits are free and don't count). Default 1500.
+// Per client (X-Giftly-Device, else IP): 40 searches and 60 store links an hour.
+const APP_KEY   = process.env.GIFTLY_APP_KEY || "";
+const ADMIN_KEY = process.env.GIFTLY_ADMIN_KEY || "";
+const DAILY_CAP = parseInt(process.env.DAILY_CAP || "1500", 10) || 1500;
+const HOUR_MS   = 60 * 60 * 1000;
+const LIMITS    = { search: 40, resolve: 60 };
+const MAX_QUERY = 120;
+const MAX_CACHE = 5000;
+
+function safeEqual(a, b) {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+function requireAppKey(req, res, next) {
+  if (!APP_KEY) return next();                    // not enforced until the env var is set
+  if (safeEqual(req.get("X-Giftly-Key") || "", APP_KEY)) return next();
+  return res.status(401).json({ error: "unauthorized" });
+}
+
+function isAdmin(req) {
+  return Boolean(ADMIN_KEY) && safeEqual(req.get("X-Giftly-Admin") || "", ADMIN_KEY);
+}
+
+// Fixed one hour windows per client and route.
+const windows = new Map();
+function clientId(req) {
+  const device = String(req.get("X-Giftly-Device") || "").slice(0, 64);
+  return /^[A-Za-z0-9-]{8,64}$/.test(device) ? "d:" + device : "ip:" + req.ip;
+}
+function rateLimit(kind) {
+  return (req, res, next) => {
+    const key = kind + "|" + clientId(req);
+    const now = Date.now();
+    let w = windows.get(key);
+    if (!w || now - w.start > HOUR_MS) { w = { start: now, count: 0 }; windows.set(key, w); }
+    w.count += 1;
+    if (w.count > LIMITS[kind]) {
+      res.set("Retry-After", String(Math.ceil((w.start + HOUR_MS - now) / 1000)));
+      return res.status(429).json({ error: "slow down" });
+    }
+    next();
+  };
+}
+setInterval(() => {                               // forget stale windows
+  const now = Date.now();
+  for (const [k, w] of windows) if (now - w.start > HOUR_MS) windows.delete(k);
+}, 10 * 60 * 1000).unref();
+
+// Global daily spend cap on Bright Data calls.
+let spend = { day: "", calls: 0 };
+function takeBudget() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (spend.day !== day) spend = { day, calls: 0 };
+  if (spend.calls >= DAILY_CAP) return false;
+  spend.calls += 1;
+  return true;
+}
+
+// Bounded caches: drop the oldest entry when full.
+function cacheSet(map, key, value) {
+  if (map.size >= MAX_CACHE) map.delete(map.keys().next().value);
+  map.set(key, value);
+}
 
 // ---- Tiny in-memory cache --------------------------------------------------
 const cache = new Map();
@@ -43,21 +118,31 @@ function parsePriceToCents(raw) {
 // optionally drop everything else. Matched case-insensitively as a substring
 // of the `shop` field (e.g. "Walmart - StarGlow" matches "walmart").
 const TRUSTED_RETAILERS = [
-  "amazon", "walmart", "target", "best buy", "bestbuy", "lego",
-  "costco", "kohl", "macy", "the home depot", "home depot", "lowe",
-  "etsy", "nordstrom", "gamestop", "barnes", "nike", "adidas",
-  "apple", "wayfair", "newegg", "sam's club", "sams club", "staples",
-  "michaels", "dick's", "dicks sporting", "ulta", "sephora", "chewy",
-  "disney", "mattel", "hasbro", "crocs", "rei", "petco", "petsmart",
+  "amazon", "walmart", "target", "best buy", "bestbuy", "lego", "costco",
+  "sam's club", "sams club", "kohl's", "kohls", "macy's", "macys",
+  "home depot", "the home depot", "lowe's", "lowes", "nordstrom",
+  "gamestop", "barnes & noble", "barnes and noble", "nike", "adidas",
+  "apple", "wayfair", "newegg", "staples", "michaels", "dick's sporting goods",
+  "dicks sporting goods", "ulta", "ulta beauty", "sephora", "chewy",
+  "disney", "shopdisney", "disney store", "mattel", "crocs", "rei", "petco",
+  "petsmart", "jcpenney", "old navy", "gap", "academy sports", "hobby lobby",
+  "pottery barn", "crate & barrel", "williams sonoma", "ikea", "toys r us",
+  "toysrus", "dell", "samsung", "microsoft", "nintendo", "playstation",
+  "bass pro shops", "cabela's", "foot locker", "under armour", "the north face",
+  "lululemon", "kroger", "meijer", "h-e-b", "bj's", "office depot", "belk",
+  "dillard's", "bloomingdale's", "saks fifth avenue", "neiman marcus",
+  "build-a-bear", "american girl", "fao schwarz", "scholastic",
 ];
 
+// Whole-word match so "rei" doesn't match "Reiss". Marketplaces and unknown
+// resellers (Mercari, eBay, Poshmark, random shops) are NOT on the list and
+// are dropped entirely.
 function retailerTrustScore(shop) {
-  const s = (shop || "").toLowerCase();
+  const name = " " + String(shop || "").toLowerCase()
+    .replace(/\.com/g, "").replace(/\u2019/g, "'").trim() + " ";
   for (const r of TRUSTED_RETAILERS) {
-    if (s.includes(r)) return 1;   // trusted
+    if (name.includes(" " + r + " ")) return 1;
   }
-  // Marketplace third-party sellers often look like "Walmart - happy baby194113"
-  // or random vendor names — rank them lower.
   return 0;
 }
 
@@ -107,11 +192,12 @@ function extractShopping(parsed) {
 }
 
 // ---- The one route the app calls -------------------------------------------
-app.get("/search", async (req, res) => {
+app.get("/search", requireAppKey, rateLimit("search"), async (req, res) => {
   const q = String(req.query.q || "").trim();
   const limit = Math.min(parseInt(req.query.limit || "5", 10) || 5, 10);
 
   if (!q) return res.status(400).json({ error: "missing q" });
+  if (q.length > MAX_QUERY) return res.status(400).json({ error: "query too long" });
   if (!TOKEN || !ZONE) {
     return res.status(500).json({ error: "proxy not configured: set BRIGHTDATA_TOKEN and SERP_ZONE" });
   }
@@ -123,6 +209,7 @@ app.get("/search", async (req, res) => {
     res.set("X-Giftly-Cache", "hit");
     return res.json(hit.products);
   }
+  if (!takeBudget()) return res.status(503).json({ error: "daily limit reached" });
 
   // 2) real-time SERP request. udm=28 = Google Shopping results surface.
   //    gl=us is REQUIRED — without a shopping country, Google returns the
@@ -186,11 +273,10 @@ app.get("/search", async (req, res) => {
     // Normalize everything, keep only priced results.
     const all = items.map(normalize).filter(p => p.priceCents > 0);
 
-    // Prefer trusted retailers: show those first, backfill with others up to
-    // `limit`. (To show ONLY trusted retailers, drop the backfill line.)
-    const trusted = all.filter(p => p._trust === 1);
-    const others  = all.filter(p => p._trust !== 1);
-    const ranked  = [...trusted, ...others].slice(0, limit);
+    // Reputable stores ONLY (Target, Walmart, Amazon, Best Buy...). No
+    // backfill with marketplaces or unknown resellers: an empty list is
+    // better than a Mercari listing, and the app widens the search itself.
+    const ranked = all.filter(p => p._trust === 1).slice(0, limit);
 
     // Strip the internal _trust field before sending to the app.
     const products = ranked.map(({ _trust, ...rest }) => rest);
@@ -200,7 +286,7 @@ app.get("/search", async (req, res) => {
       console.log(`[serp] 0 products. top-level keys: ${Object.keys(parsed || {}).join(", ")}`);
     }
 
-    cache.set(key, { at: Date.now(), products });
+    cacheSet(cache, key, { at: Date.now(), products });
     res.set("X-Giftly-Cache", "miss");
     return res.json(products);
   } catch (err) {
@@ -208,15 +294,100 @@ app.get("/search", async (req, res) => {
   }
 });
 
-app.get("/health", (_req, res) =>
-  res.json({ ok: true, configured: Boolean(TOKEN && ZONE), zone: ZONE, mode: "serp-request" })
-);
+// ---- Store link resolver ----------------------------------------------------
+// Google Shopping results only carry Google's own product page. When the
+// parent taps Buy, the app asks here for the store's real product page:
+// fetch Google's product page through Bright Data, collect every outbound
+// link, and return the first one on the STORE'S OWN DOMAIN (lego.com for
+// "LEGO.com", walmart.com for "Walmart"). Anything else returns url: null and
+// the app falls back to searching that store's site for the exact title.
+//   curl "http://localhost:8787/resolve?u=<google product link>&store=LEGO.com&debug=1"
+const resolveCache = new Map();
+
+function pickMerchantLink(html, store) {
+  const text = String(html)
+    .replace(/\\u003d/g, "=").replace(/\\u0026/g, "&")
+    .replace(/&amp;/g, "&").replace(/\\\//g, "/");
+  const candidates = new Set();
+  // Google redirect wrappers: /url?q=<target>&..., ?adurl=, ?url=
+  for (const m of text.matchAll(/[?&](?:q|url|adurl)=(https?(?:%3A%2F%2F|:\/\/)[^&"'\s<>]+)/gi)) {
+    try { candidates.add(decodeURIComponent(m[1])); } catch { /* skip */ }
+  }
+  for (const m of text.matchAll(/https?:\/\/[^"'\s<>\\)]+/g)) candidates.add(m[0]);
+
+  const blocked = /(google\.|gstatic\.|googleusercontent\.|googleapis\.|youtube\.|ggpht\.|schema\.org|w3\.org|doubleclick\.|googlesyndication\.|googleadservices\.)/i;
+  const links = [...candidates].filter((c) => {
+    try {
+      const host = new URL(c).hostname;
+      return !blocked.test(host) && !/\.(png|jpe?g|gif|webp|svg|js|css|ico)(\?|$)/i.test(c);
+    } catch { return false; }
+  });
+
+  const want = store.replace(/com$/, "");
+  const onStore = want
+    ? links.filter((c) => new URL(c).hostname.toLowerCase().replace(/[^a-z0-9]/g, "").includes(want))
+    : [];
+  // Prefer a deep link (a product page) over the store's home page.
+  onStore.sort((a, b) => new URL(b).pathname.length - new URL(a).pathname.length);
+  return { url: onStore[0] || null, links };
+}
+
+app.get("/resolve", requireAppKey, rateLimit("resolve"), async (req, res) => {
+  const u = String(req.query.u || "");
+  const store = String(req.query.store || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const debug = req.query.debug === "1" && isAdmin(req);
+
+  if (u.length > 2048) return res.status(400).json({ url: null, error: "link too long" });
+
+  if (!/^https:\/\/www\.google\.[a-z.]+\/search\?/i.test(u)) {
+    return res.status(400).json({ url: null, error: "not a google shopping link" });
+  }
+  if (!TOKEN || !ZONE) return res.status(500).json({ url: null, error: "proxy not configured" });
+
+  const key = `${u}::${store}`;
+  const hit = resolveCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS && !debug) {
+    res.set("X-Giftly-Cache", "hit");
+    return res.json({ url: hit.url });
+  }
+  if (!takeBudget()) return res.status(503).json({ url: null, error: "daily limit reached" });
+
+  try {
+    const bdRes = await fetch(REQUEST_URL, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ zone: ZONE, url: u, format: "raw" }),
+    });
+    const html = await bdRes.text();
+    if (!bdRes.ok) {
+      console.log(`[resolve] HTTP ${bdRes.status}: ${html.slice(0, 200)}`);
+      return res.status(502).json({ url: null, error: `brightdata ${bdRes.status}` });
+    }
+    const { url, links } = pickMerchantLink(html, store);
+    cacheSet(resolveCache, key, { at: Date.now(), url });
+    if (debug) {
+      return res.json({ url, store, htmlBytes: html.length, outboundLinks: links.length, sample: links.slice(0, 15) });
+    }
+    return res.json({ url });
+  } catch (err) {
+    return res.status(502).json({ url: null, error: String(err).slice(0, 200) });
+  }
+});
+
+app.get("/health", (req, res) => {
+  const base = { ok: true, configured: Boolean(TOKEN && ZONE), locked: Boolean(APP_KEY) };
+  if (!isAdmin(req)) return res.json(base);
+  return res.json({ ...base, zone: ZONE, spendToday: spend, dailyCap: DAILY_CAP,
+                    cached: cache.size, clients: windows.size });
+});
 
 // Debug: run a live SERP call and return the RAW parsed shape (first 2 items +
 // their keys) so we can map product fields exactly. Not used by the app.
+// Admin only (X-Giftly-Admin header).
 //   curl "http://localhost:8787/raw?q=lego+race+car"
 app.get("/raw", async (req, res) => {
-  const q = String(req.query.q || "lego race car").trim();
+  if (!isAdmin(req)) return res.status(404).json({ error: "not found" });
+  const q = String(req.query.q || "lego race car").trim().slice(0, MAX_QUERY);
   try {
     const googleURL = "https://www.google.com/search?q=" + encodeURIComponent(q) + "&udm=28&gl=us&hl=en";
     const bdRes = await fetch(REQUEST_URL, {
@@ -253,4 +424,5 @@ app.get("/raw", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Giftly price proxy (SERP /request) on http://localhost:${PORT}`);
   console.log(`Configured: ${Boolean(TOKEN && ZONE)} (token ${TOKEN ? "set" : "MISSING"}, zone ${ZONE})`);
+  console.log(`App key: ${APP_KEY ? "enforced" : "NOT SET (open)"}, daily cap ${DAILY_CAP}`);
 });

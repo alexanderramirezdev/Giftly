@@ -85,7 +85,7 @@ final class ProxyPriceService: PriceService {
         guard let url = comps.url else { throw PriceServiceError.emptyQuery }
 
         do {
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await session.data(for: authorized(url))
             guard let http = response as? HTTPURLResponse else {
                 throw PriceServiceError.badResponse(-1)
             }
@@ -104,6 +104,46 @@ final class ProxyPriceService: PriceService {
             throw PriceServiceError.transport(error.localizedDescription)
         }
     }
+}
+
+extension ProxyPriceService {
+    /// Every proxy call carries the app key and this install's random ID.
+    func authorized(_ url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 45
+        request.setValue(GiftlyConfig.appKey, forHTTPHeaderField: "X-Giftly-Key")
+        request.setValue(GiftlyConfig.deviceID, forHTTPHeaderField: "X-Giftly-Device")
+        return request
+    }
+
+    /// Asks the proxy to turn a Google Shopping product page into the store's
+    /// own product page. Returns nil when it can't; StoreLinks then falls back
+    /// to searching that store's site for the exact title.
+    func resolveStoreURL(googleURL: String, store: String) async -> URL? {
+        guard var comps = URLComponents(url: baseURL.appendingPathComponent("resolve"),
+                                        resolvingAgainstBaseURL: false) else { return nil }
+        comps.queryItems = [
+            URLQueryItem(name: "u", value: googleURL),
+            URLQueryItem(name: "store", value: store)
+        ]
+        guard let url = comps.url else { return nil }
+        var request = authorized(url)
+        request.timeoutInterval = 8
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+            let resolved = try JSONDecoder().decode(ResolvedLink.self, from: data)
+            guard let string = resolved.url, let link = URL(string: string),
+                  let scheme = link.scheme?.lowercased(), scheme.hasPrefix("http") else { return nil }
+            return link
+        } catch {
+            return nil
+        }
+    }
+}
+
+private struct ResolvedLink: Decodable {
+    let url: String?
 }
 
 // MARK: - Mock (development, previews, and the free-tier offline experience)

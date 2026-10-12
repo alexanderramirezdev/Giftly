@@ -50,6 +50,7 @@ struct GiftlyApp: App {
                 .onAppear {
                     if session.role == .parent { GiftIntelligence.shared.prewarm() }
                 }
+                .task { await Entitlements.shared.unlockForBetaIfNeeded() }
         }
         .modelContainer(container)
     }

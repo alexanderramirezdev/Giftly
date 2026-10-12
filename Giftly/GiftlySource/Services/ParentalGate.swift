@@ -2,103 +2,204 @@
 //  ParentalGate.swift
 //  Giftly
 //
-//  Apple's "ask a grown-up" gate — the friction a young child won't casually
-//  pass — before entering grown-up mode or spending money. We use a
-//  PRESS-AND-HOLD gate rather than arithmetic: it's warmer, instant for an
-//  adult, and a small child won't deliberately hold for the full duration.
-//  Apple accepts press-and-hold / long-interaction gates for kids-adjacent apps.
+//  The grown-ups gate, used before switching to Parent role (v2 kid mode)
+//  or anything that spends money.
+//
+//  Step 1: pick your birth year. Under 18 ends here for this attempt.
+//  Step 2: Face ID / Touch ID (or the device passcode) confirms the device
+//          owner. A kid can guess a year; they can't pass the owner's Face ID.
+//  Fallback: if the device has no passcode at all, a dynamic arithmetic or
+//          spelling challenge (Apple's classic parental gate) replaces step 2.
+//
+//  The birth year is only compared, never stored or sent anywhere.
+//  Requires NSFaceIDUsageDescription in Info.plist.
 //
 
 import SwiftUI
+import LocalAuthentication
+
+struct ParentalGateChallenge {
+    let prompt: String
+    let answer: String
+
+    static func random() -> ParentalGateChallenge {
+        if Bool.random() {
+            let a = Int.random(in: 11...19)
+            let b = Int.random(in: 2...9)
+            return .init(prompt: "To continue, type the answer: \(a) + \(b)", answer: String(a + b))
+        } else {
+            let n = Int.random(in: 3...9)
+            let words = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+            return .init(prompt: "To continue, spell the number \(n) in letters.", answer: words[n])
+        }
+    }
+
+    func accepts(_ input: String) -> Bool {
+        input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == answer.lowercased()
+    }
+}
 
 struct ParentalGateView: View {
     let onSuccess: () -> Void
     let onCancel: () -> Void
 
-    private let holdDuration: Double = 1.5
+    private enum Step { case birthYear, authenticating, challenge, tooYoung }
 
-    @State private var progress: CGFloat = 0
-    @State private var holding = false
-    @State private var done = false
-    @State private var timer: Timer?
+    private static let currentYear = Calendar.current.component(.year, from: .now)
+    private static let adultAge = 18
+
+    @State private var step: Step = .birthYear
+    // Starts on the current year on purpose: nobody passes by tapping Continue.
+    @State private var birthYear = ParentalGateView.currentYear
+    @State private var authFailed = false
+    @State private var challenge = ParentalGateChallenge.random()
+    @State private var answer = ""
+    @State private var wrongAnswer = false
 
     var body: some View {
-        VStack(spacing: 26) {
-            Spacer()
+        ZStack {
+            VStack(spacing: 20) {
+                Image(systemName: "person.badge.key.fill")
+                    .font(.system(size: 40))
+                    .foregroundStyle(GiftlyTheme.cranberry)
 
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(width: 150, height: 150)
+                Text("Grown-ups only")
+                    .font(.workshop(24, weight: .bold))
+                    .foregroundStyle(.primary)
 
-                // progress ring fills as you hold
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 150, height: 150)
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.05), value: progress)
-
-                Image(systemName: done ? "checkmark" : "hand.tap.fill")
-                    .font(.system(size: 46))
-                    .foregroundStyle(.tint)
-                    .scaleEffect(holding ? 0.9 : 1.0)
-                    .animation(.spring(response: 0.3), value: holding)
+                switch step {
+                case .birthYear:      birthYearStep
+                case .authenticating: ProgressView().tint(GiftlyTheme.cranberry)
+                case .challenge:      challengeStep
+                case .tooYoung:       tooYoungStep
+                }
             }
-            .contentShape(Circle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in if !holding && !done { startHold() } }
-                    .onEnded { _ in if !done { cancelHold() } }
-            )
-
-            VStack(spacing: 8) {
-                Text(done ? "Welcome back 👋" : "Grown-ups only")
-                    .font(.title2.bold())
-                Text(done ? "" : "Press and hold the circle for a moment to continue.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(height: 44)
-            }
-
-            Spacer()
-
-            Button("Cancel", role: .cancel) { cancelHold(); onCancel() }
-                .buttonStyle(.bordered)
-                .padding(.bottom, 8)
+            .padding(28)
+            .frame(maxWidth: 480)
         }
-        .padding(32)
-        .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .giftlyBackground()
     }
 
-    private func startHold() {
-        holding = true
-        Haptics.tap()
-        timer?.invalidate()
-        let step = 0.05
-        timer = Timer.scheduledTimer(withTimeInterval: step, repeats: true) { t in
-            progress += CGFloat(step / holdDuration)
-            if progress >= 1 {
-                t.invalidate()
-                succeed()
+    // MARK: Steps
+
+    private var birthYearStep: some View {
+        VStack(spacing: 16) {
+            Text("What year were you born?")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Picker("Birth year", selection: $birthYear) {
+                ForEach((ParentalGateView.currentYear - 100)...ParentalGateView.currentYear, id: \.self) { year in
+                    Text(String(year)).tag(year)
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(height: 140)
+
+            if authFailed {
+                Text("That didn't work. Try again.")
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+            }
+
+            buttons(continueTitle: "Continue", disabled: false) { checkYear() }
+        }
+    }
+
+    private var challengeStep: some View {
+        VStack(spacing: 16) {
+            Text(challenge.prompt)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+
+            TextField("Answer", text: $answer)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.center)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .frame(maxWidth: 220)
+
+            if wrongAnswer {
+                Text("Not quite. Try again.")
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+            }
+
+            buttons(continueTitle: "Continue", disabled: answer.isEmpty) { checkAnswer() }
+        }
+    }
+
+    private var tooYoungStep: some View {
+        VStack(spacing: 16) {
+            Text("This part is for grown-ups. Ask a parent to help.")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+            Button("OK", action: onCancel)
+                .buttonStyle(.borderedProminent)
+                .tint(GiftlyTheme.cranberry)
+        }
+    }
+
+    private func buttons(continueTitle: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 12) {
+            Button("Cancel", role: .cancel, action: onCancel)
+                .buttonStyle(.bordered)
+            Button(continueTitle, action: action)
+                .buttonStyle(.borderedProminent)
+                .tint(GiftlyTheme.cranberry)
+                .disabled(disabled)
+        }
+    }
+
+    // MARK: Logic
+
+    private func checkYear() {
+        let age = ParentalGateView.currentYear - birthYear
+        guard age >= ParentalGateView.adultAge else {
+            step = .tooYoung
+            return
+        }
+        authenticate()
+    }
+
+    private func authenticate() {
+        let context = LAContext()
+        var error: NSError?
+        // .deviceOwnerAuthentication = Face ID / Touch ID with passcode fallback.
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            // No passcode on this device: fall back to the classic challenge.
+            step = .challenge
+            return
+        }
+        step = .authenticating
+        authFailed = false
+        Task {
+            do {
+                let ok = try await context.evaluatePolicy(.deviceOwnerAuthentication,
+                                                          localizedReason: "Confirm you're the grown-up")
+                if ok {
+                    onSuccess()
+                } else {
+                    step = .birthYear
+                    authFailed = true
+                }
+            } catch {
+                step = .birthYear
+                authFailed = true
             }
         }
     }
 
-    private func cancelHold() {
-        holding = false
-        timer?.invalidate()
-        withAnimation(.easeOut(duration: 0.3)) { progress = 0 }
-    }
-
-    private func succeed() {
-        holding = false
-        done = true
-        progress = 1
-        Haptics.success()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { onSuccess() }
+    private func checkAnswer() {
+        if challenge.accepts(answer) {
+            onSuccess()
+        } else {
+            wrongAnswer = true
+            answer = ""
+            challenge = .random()
+        }
     }
 }

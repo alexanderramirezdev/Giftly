@@ -19,3 +19,6 @@ build/
 
 # --- Backup / scratch ---
 *.bak
+
+# --- App secrets (proxy key) ---
+Giftly/GiftlySource/Support/GiftlySecrets.swift

@@ -3,51 +3,52 @@
 //  Giftly
 //
 //  Assembles Giftly's living seasonal background. Sits BEHIND the home content,
-//  ignores touches, and is hidden from accessibility. Season is chosen from the
-//  nearest upcoming occasion (so the world matches what you're shopping for),
-//  falling back to the calendar month.
+//  ignores touches, and is hidden from accessibility. The season follows the
+//  calendar (FloraFang style) unless the parent pins one in Settings. Only the
+//  Holiday Workshop has the elf crew and reindeer.
 //
 
 import SwiftUI
 
-enum GiftlySeason {
-    case winter, spring, summer, autumn
-
-    static func forMonth(_ m: Int) -> GiftlySeason {
-        switch m {
-        case 12, 1, 2: return .winter
-        case 3, 4, 5:  return .spring
-        case 6, 7, 8:  return .summer
-        default:       return .autumn
-        }
-    }
-}
-
 struct GiftlyAtmosphereView: View {
-    /// Pass a season explicitly, or nil to derive from the current month.
+    /// Pin a season, or nil to follow Settings (auto by date or the parent's pick).
     var season: GiftlySeason?
     /// 0...1 fullness for the gift stack (occasion progress). 1 = full.
     var giftFullness: Double = 1.0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(GiftlySeason.settingKey) private var seasonSetting = "auto"
+    @AppStorage(GiftlySeason.touchesKey) private var touchesSetting = "auto"
+    @AppStorage(GiftlySeason.previewTouchKey) private var previewTouch = "none"
 
     private var resolvedSeason: GiftlySeason {
-        season ?? .forMonth(Calendar.current.component(.month, from: .now))
+        if let season { return season }
+        return GiftlySeason.shown(setting: seasonSetting, preview: previewTouch)
+    }
+
+    private var activeTouches: [SeasonalTouch] {
+        SeasonalTouch.resolve(for: resolvedSeason, touches: touchesSetting, preview: previewTouch)
     }
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 switch resolvedSeason {
-                case .winter:
+                case .holiday:
                     WinterAtmosphere(size: geo.size, reduceMotion: reduceMotion, giftFullness: giftFullness)
-                default:
-                    // Other seasons slot in here later; winter ships first.
-                    WinterAtmosphere(size: geo.size, reduceMotion: reduceMotion, giftFullness: giftFullness)
+                case .snowDay:
+                    SnowDayScene(reduceMotion: reduceMotion, touches: activeTouches)
+                case .spring:
+                    SpringScene(reduceMotion: reduceMotion, touches: activeTouches)
+                case .summer:
+                    SummerScene(reduceMotion: reduceMotion, touches: activeTouches)
+                case .autumn:
+                    AutumnScene(reduceMotion: reduceMotion, touches: activeTouches)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
+            .animation(.easeInOut(duration: 0.6), value: resolvedSeason)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -74,15 +75,19 @@ private struct WinterAtmosphere: View {
                 .frame(width: 180, height: 90)
                 .position(x: size.width * 0.80 - 40, y: size.height - 46)
 
-            // 3. Elves peeking in and out from behind the tree
+            // 3. The workshop crew peeking in and out from behind the tree,
+            //    each on their own schedule.
             ElfPeek(size: size, reduceMotion: reduceMotion,
                     anchor: CGPoint(x: size.width * 0.62, y: size.height - 70),
-                    period: 11, phase: 0, flip: false)
+                    period: 11, phase: 0, flip: false, style: ElfStyle.juniper, pose: .waving)
             ElfPeek(size: size, reduceMotion: reduceMotion,
                     anchor: CGPoint(x: size.width * 0.93, y: size.height - 60),
-                    period: 14, phase: 6, flip: true)
+                    period: 14, phase: 6, flip: true, style: ElfStyle.tinsel, pose: .idle)
+            ElfPeek(size: size, reduceMotion: reduceMotion,
+                    anchor: CGPoint(x: size.width * 0.70, y: size.height - 210),
+                    period: 17, phase: 11, flip: false, style: ElfStyle.holly, pose: .waving)
 
-            // 4. A reindeer strolling across the lower band
+            // 4. A reindeer leading a little parade of elves carrying gifts
             ReindeerStroll(size: size, reduceMotion: reduceMotion)
 
             // 5. Drifting snow
@@ -129,23 +134,27 @@ private struct ElfPeek: View {
     let period: Double
     let phase: Double
     let flip: Bool
+    let style: ElfStyle
+    let pose: ElfPose
 
     private let motion: PeekMotion
 
-    init(size: CGSize, reduceMotion: Bool, anchor: CGPoint, period: Double, phase: Double, flip: Bool) {
+    init(size: CGSize, reduceMotion: Bool, anchor: CGPoint, period: Double, phase: Double, flip: Bool,
+         style: ElfStyle = ElfStyle.pip, pose: ElfPose = .idle) {
         self.size = size; self.reduceMotion = reduceMotion
         self.anchor = anchor; self.period = period; self.phase = phase; self.flip = flip
+        self.style = style; self.pose = pose
         self.motion = PeekMotion(period: period, visibleFraction: 0.32, phase: phase)
     }
 
     var body: some View {
         if reduceMotion {
             // Show the elf gently, half-up, no popping.
-            GiftlyElf(visibility: 0.85, flip: flip).position(anchor)
+            GiftlyElf(visibility: 0.85, flip: flip, style: style, pose: .idle).position(anchor)
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                 let v = motion.visibility(at: timeline.date.timeIntervalSinceReferenceDate)
-                GiftlyElf(visibility: v, flip: flip)
+                GiftlyElf(visibility: v, flip: flip, style: style, pose: pose)
                     .position(anchor)
             }
         }
@@ -157,22 +166,30 @@ private struct ElfPeek: View {
 private struct ReindeerStroll: View {
     let size: CGSize
     let reduceMotion: Bool
-    @State private var x: CGFloat = -120
+    @State private var x: CGFloat = -60
     @State private var bob: CGFloat = 0
 
     var body: some View {
-        let y = size.height - 150
-        GiftlyReindeer()
-            .offset(y: bob)
-            .position(x: x, y: y)
-            .opacity(0.95)
+        let y: CGFloat = size.height - 150
+        // Elf feet line up with the reindeer's hooves (see GiftlyReindeer's grid).
+        let elfY: CGFloat = y + 24
+        ZStack {
+            GiftlyReindeer()
+                .offset(y: bob)
+                .position(x: x, y: y)
+            ElfView(pose: .carrying, size: 34, style: ElfStyle.juniper)
+                .position(x: x - 74, y: elfY)
+            ElfView(pose: .carrying, size: 34, style: ElfStyle.holly)
+                .position(x: x - 112, y: elfY)
+        }
+        .opacity(0.95)
             .task {
                 guard !reduceMotion else { x = size.width * 0.18; return }
                 withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) { bob = -4 }
                 while !Task.isCancelled {
-                    x = -120
-                    withAnimation(.linear(duration: 22)) { x = size.width + 120 }
-                    try? await Task.sleep(for: .seconds(22))
+                    x = -60
+                    withAnimation(.linear(duration: 24)) { x = size.width + 180 }
+                    try? await Task.sleep(for: .seconds(24))
                     try? await Task.sleep(for: .seconds(14))   // off-screen rest
                 }
             }
