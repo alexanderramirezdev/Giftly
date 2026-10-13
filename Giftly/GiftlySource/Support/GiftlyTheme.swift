@@ -56,18 +56,26 @@ struct GiftlyCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
+        // Liquid Glass, so the living seasonal scene still shows through
+        // when the screen fills up with cards.
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: GiftlyTheme.cardRadius, style: .continuous)
-                    .fill(GiftlyTheme.card)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: GiftlyTheme.cardRadius, style: .continuous)
-                    .stroke(GiftlyTheme.cardStroke, lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
+            // Tinted with the card color so text always has a solid, readable
+            // surface; the glass edges still catch the scene behind.
+            .glassEffect(.regular.tint(GiftlyTheme.card.opacity(0.85)),
+                         in: RoundedRectangle(cornerRadius: GiftlyTheme.cardRadius, style: .continuous))
+    }
+}
+
+extension GiftlyTheme {
+    /// Row background for lists and forms: frosted, so the scene and the
+    /// seasonal wash read through instead of a solid sheet.
+    static var glassRow: some View {
+        ZStack {
+            Rectangle().fill(.thinMaterial)
+            GiftlyTheme.card.opacity(0.82)
+        }
     }
 }
 
@@ -76,16 +84,19 @@ struct GiftlyCard<Content: View>: View {
 struct GiftlySectionHeader: View {
     let title: String
     var systemImage: String? = nil
-    var tint: Color = .secondary
+    var tint: Color = .primary
 
     var body: some View {
         HStack(spacing: 6) {
             if let systemImage { Image(systemName: systemImage) }
             Text(title)
         }
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(tint)
+        .font(.subheadline.weight(.bold))
+        .foregroundStyle(tint.opacity(0.85))
         .textCase(nil)
+        // A soft halo keeps headers readable over the moving scene.
+        .shadow(color: GiftlyTheme.background.opacity(0.9), radius: 3)
+        .shadow(color: GiftlyTheme.background.opacity(0.6), radius: 8)
     }
 }
 
@@ -97,13 +108,12 @@ struct GiftlyPrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// Reads the season so the main button wears the seasonal accent.
+/// The main button keeps the brand color in every season so it always reads.
 private struct GiftlyPrimaryButtonBody: View {
     let configuration: ButtonStyleConfiguration
-    @AppStorage(GiftlySeason.settingKey) private var seasonSetting = "auto"
 
     var body: some View {
-        let fillColor: Color = GiftlySeason.resolve(setting: seasonSetting).accent
+        let fillColor: Color = GiftlyTheme.cranberry
         return configuration.label
             .font(.body.weight(.semibold))
             .frame(maxWidth: .infinity)

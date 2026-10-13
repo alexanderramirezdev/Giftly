@@ -5,11 +5,11 @@
 //  App entry point. Wires the SwiftData model container (with CloudKit),
 //  the AppSession (role state), entitlements, and the FM prewarm.
 //
-//  CloudKit note: the ModelConfiguration below uses the default automatic
-//  CloudKit sync. For that to work you must, in the real Xcode project:
-//    • add the iCloud capability with CloudKit + a container
-//    • add the "Background Modes → Remote notifications" capability
-//    • make sure every @Model obeys the CloudKit rules (see Models.swift)
+//  CloudKit: syncs to the parent's private database in
+//  iCloud.com.aramirez.Giftly. Needs the iCloud (CloudKit) capability with
+//  that container and Background Modes > Remote notifications. Debug builds
+//  push the schema to the Development environment once (CloudSchema); deploy
+//  it to Production in the CloudKit Console before TestFlight.
 //  Kid wishes are stored in the SAME store here for v1 simplicity; if you
 //  want the stricter "kid data never leaves device" posture, give the kid
 //  store its OWN non-synced ModelConfiguration — noted in the README.
@@ -23,22 +23,35 @@ struct GiftlyApp: App {
 
     @State private var session = AppSession()
 
-    // Shared model container with CloudKit sync.
-    let container: ModelContainer = {
+    // Shared model container, synced to the parent's private iCloud database.
+    let container: ModelContainer = GiftlyApp.makeContainer()
+
+    static let cloudContainerID = "iCloud.com.aramirez.Giftly"
+
+    private static func makeContainer() -> ModelContainer {
         let schema = Schema([Person.self, Occasion.self, Wish.self, ProductMatch.self])
-        let config = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: .none                 // local-only for first run; flip to .automatic once iCloud capability is added
-        )
+        #if DEBUG
+        CloudSchema.initializeIfNeeded(schema: schema, containerID: cloudContainerID)
+        #endif
+        let synced = ModelConfiguration(schema: schema,
+                                        isStoredInMemoryOnly: false,
+                                        cloudKitDatabase: .private(cloudContainerID))
         do {
-            return try ModelContainer(for: schema, configurations: [config])
+            return try ModelContainer(for: schema, configurations: [synced])
         } catch {
-            // A CloudKit misconfiguration is the #1 launch crash here. Fail
-            // loudly in dev; in production you'd fall back to a local store.
-            fatalError("Could not create ModelContainer: \(error)")
+            // Never crash a tester over iCloud: fall back to the same store
+            // on this phone only. Sync picks up once the problem is fixed.
+            print("CloudKit container failed, using local store: \(error)")
+            let local = ModelConfiguration(schema: schema,
+                                           isStoredInMemoryOnly: false,
+                                           cloudKitDatabase: .none)
+            do {
+                return try ModelContainer(for: schema, configurations: [local])
+            } catch {
+                fatalError("Could not create ModelContainer: \(error)")
+            }
         }
-    }()
+    }
 
     var body: some Scene {
         WindowGroup {

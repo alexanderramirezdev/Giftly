@@ -45,7 +45,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Season")
                 } footer: {
-                    Text("Pip and the elf crew run the workshop from Black Friday through January 6. The rest of the year Pip is off duty in a seasonal outfit.")
+                    Text("Pip and the elf crew run the workshop from Black Friday through January 6. The rest of the year Pip is a little gift box, wrapped for the season.")
                 }
 
                 Section {
@@ -66,7 +66,7 @@ struct SettingsView: View {
                     Button {
                         showingIntro = true
                     } label: {
-                        Label("How Giftly works", systemImage: "questionmark.circle")
+                        Label("How Pip works", systemImage: "questionmark.circle")
                     }
                 }
             }
@@ -92,7 +92,7 @@ struct SettingsView: View {
             GiftlyTheme.background
             GiftlyAtmosphereView(season: shownSeason, giftFullness: 0.7)
             HStack(spacing: 8) {
-                ElfView(pose: .waving, size: 36, style: ElfStyle.pip(for: shownSeason))
+                ElfView(pose: .waving, size: 36, season: shownSeason)
                 Text(shownSeason.title)
                     .font(.headline)
                     .foregroundStyle(shownSeason.accent)

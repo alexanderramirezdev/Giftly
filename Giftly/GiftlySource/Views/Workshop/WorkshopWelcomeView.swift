@@ -38,7 +38,7 @@ struct IntroView: View {
             topBar
             TabView(selection: $page) {
                 IntroPage(title: "Welcome to the workshop",
-                          message: "Giftly keeps every wish for everyone you shop for in one calm place, with real prices from real stores.") {
+                          message: "Pip keeps every wish for everyone you shop for in one calm place, with real prices from real stores.") {
                     WelcomeArt()
                 }
                 .tag(0)
@@ -162,8 +162,11 @@ private struct WelcomeArt: View {
     var body: some View {
         VStack(spacing: 6) {
             ElfView(pose: .cheering, size: 150)
-            Text("Giftly")
-                .font(.workshop(44, weight: .bold))
+            Text("Pip")
+                .font(.workshop(48, weight: .bold))
+            Text("Gift Lists")
+                .font(.workshop(20, weight: .semibold))
+                .foregroundStyle(.secondary)
         }
     }
 }

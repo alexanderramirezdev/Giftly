@@ -14,7 +14,7 @@ import SwiftUI
 /// One Canvas driven by a clock, with a still frame under Reduce Motion.
 struct SceneCanvas: View {
     let reduceMotion: Bool
-    var fps: Double = 30
+    var fps: Double = 24
     let draw: (GraphicsContext, CGSize, Double) -> Void
 
     var body: some View {

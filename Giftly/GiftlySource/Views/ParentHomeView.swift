@@ -19,6 +19,7 @@ struct ParentHomeView: View {
     @State private var showingQuickAdd = false
     @State private var showingContactPicker = false
     @State private var showingScan = false
+    @State private var showingTexts = false
     @State private var showingSettings = false
     @State private var ideasPerson: Person?
     @State private var banner: String?
@@ -28,10 +29,11 @@ struct ParentHomeView: View {
     var body: some View {
         NavigationStack {
             screen
-                .navigationTitle("Giftly")
+                .navigationTitle("Pip")
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $showingQuickAdd) { QuickAddWishView() }
                 .sheet(isPresented: $showingScan) { ScanListView() }
+                .sheet(isPresented: $showingTexts) { ScanListView(source: .texts) }
                 .sheet(isPresented: $showingSettings) { SettingsView() }
                 .sheet(item: $ideasPerson) { person in GiftIdeasView(person: person) }
                 .background(contactPicker)
@@ -54,6 +56,8 @@ struct ParentHomeView: View {
                                onScan: { showingScan = true })
             } else {
                 ScrollView {
+                    // One glass container so the cards render and blend as a set.
+                    GlassEffectContainer(spacing: 22) {
                     VStack(spacing: 22) {
                         PipGreetingRow(next: upcomingOccasions.first,
                                        onIdeas: { person in ideasPerson = person },
@@ -61,6 +65,8 @@ struct ParentHomeView: View {
                         addButtons
                         if !upcomingOccasions.isEmpty { comingUpCard }
                         peopleCard
+                        if pastCount > 0 { pastEventsLink }
+                    }
                     }
                     .padding(.horizontal, GiftlyTheme.gutter)
                     .padding(.top, 8)
@@ -83,16 +89,20 @@ struct ParentHomeView: View {
             }
             .buttonStyle(GiftlyPrimaryButtonStyle())
 
-            Button {
-                Haptics.tap()
-                showingScan = true
+            Menu {
+                Button { showingScan = true } label: {
+                    Label("Scan a paper list", systemImage: "doc.viewfinder")
+                }
+                Button { showingTexts = true } label: {
+                    Label("From a text message", systemImage: "message")
+                }
             } label: {
                 Image(systemName: "doc.viewfinder")
                     .font(.title3.weight(.semibold))
                     .frame(width: 52, height: 50)
             }
             .buttonStyle(.bordered)
-            .accessibilityLabel("Scan a wish list")
+            .accessibilityLabel("Scan a list or a text")
         }
     }
 
@@ -118,6 +128,7 @@ struct ParentHomeView: View {
                 UpcomingRow(occasion: occasion)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 12)
+                    .contentShape(Rectangle())   // the whole row is tappable, not just the text
             }
             .buttonStyle(.plain)
             if showDivider { Divider().padding(.leading, 50) }
@@ -140,16 +151,57 @@ struct ParentHomeView: View {
 
     private func personRow(_ person: Person, showDivider: Bool) -> some View {
         VStack(spacing: 0) {
-            NavigationLink {
-                PersonDetailView(person: person)
-            } label: {
-                PersonRow(person: person)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 12)
+            SwipeToDelete(itemName: person.firstName,
+                          detail: "Their occasions and gift ideas are deleted too.") {
+                withAnimation { context.delete(person) }
+            } content: {
+                NavigationLink {
+                    PersonDetailView(person: person)
+                } label: {
+                    PersonRow(person: person)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())   // the whole row is tappable, not just the text
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             if showDivider { Divider().padding(.leading, 56) }
         }
+    }
+
+    /// Past events live behind one row, not listed out on the home screen.
+    private var pastEventsLink: some View {
+        let count: Int = pastCount
+        let noun: String = count == 1 ? "event" : "events"
+        return NavigationLink {
+            PastEventsView()
+        } label: {
+            GiftlyCard(padding: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                        .frame(width: 32)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Past events").font(.body.weight(.semibold)).foregroundStyle(.primary)
+                        Text("\(count) \(noun), with what you gave")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var pastCount: Int {
+        var n = 0
+        for person in people {
+            for o in person.occasions ?? [] where o.belongsInPast { n += 1 }
+        }
+        return n
     }
 
     @ToolbarContentBuilder
@@ -178,6 +230,9 @@ struct ParentHomeView: View {
             }
             Button { showingScan = true } label: {
                 Label("Scan a wish list", systemImage: "doc.viewfinder")
+            }
+            Button { showingTexts = true } label: {
+                Label("From a text message", systemImage: "message")
             }
             Button { showingContactPicker = true } label: {
                 Label("Import from Contacts", systemImage: "person.crop.circle.badge.plus")
@@ -274,13 +329,25 @@ struct PipGreetingRow: View {
 
     @Environment(GiftIntelligence.self) private var brain
     @State private var spoken: String?
+    @State private var cheering = false
+
+    /// Pip is the star of the home screen, not a footnote.
+    private let pipSize: CGFloat = 104
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            PipSays(text: spoken ?? template, pose: pose, elfSize: 56)
-                .animation(.easeInOut(duration: 0.35), value: spoken)
+            PipSays(text: spoken ?? template, pose: cheering ? .cheering : pose, elfSize: pipSize) {
+                // Tap Pip and he cheers.
+                Haptics.soft()
+                cheering = true
+                Task {
+                    try? await Task.sleep(for: .seconds(1.6))
+                    cheering = false
+                }
+            }
+            .animation(.easeInOut(duration: 0.35), value: spoken)
             actionButton
-                .padding(.leading, 66)
+                .padding(.leading, pipSize + 10)
         }
         .task(id: template) {
             // The template is correct on its own and shows instantly. Pip's

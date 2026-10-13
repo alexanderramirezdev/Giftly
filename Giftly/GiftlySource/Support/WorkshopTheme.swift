@@ -56,17 +56,22 @@ struct PipSays: View {
     let text: String
     var pose: ElfPose = .idle
     var elfSize: CGFloat = 64
+    /// Optional: what happens when someone taps Pip.
+    var onTapPip: (() -> Void)? = nil
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        HStack(alignment: .bottom, spacing: 6) {
             ElfView(pose: pose, size: elfSize)
-            GiftlyCard(padding: 12) {
+                .contentShape(Rectangle())
+                .onTapGesture { onTapPip?() }
+                .accessibilityHidden(onTapPip == nil)
+            GiftlyCard(padding: 14) {
                 Text(text)
-                    .font(.workshop(15, weight: .medium))
+                    .font(.workshop(16, weight: .medium))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.bottom, elfSize * 0.2)
+            .padding(.bottom, elfSize * 0.25)
         }
     }
 }

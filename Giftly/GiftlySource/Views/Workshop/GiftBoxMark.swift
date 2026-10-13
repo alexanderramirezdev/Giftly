@@ -35,12 +35,13 @@ struct GiftBoxMark: View {
 
     var body: some View {
         Group {
-            if reduceMotion {
+            // A calm box doesn't move, so it doesn't need a clock running.
+            if reduceMotion || (stage == .calm && kind == nil) {
                 Canvas { ctx, sz in
                     drawBox(ctx, size: sz, t: 0)
                 }
             } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
                     Canvas { ctx, sz in
                         drawBox(ctx, size: sz, t: timeline.date.timeIntervalSinceReferenceDate)
                     }
@@ -141,7 +142,7 @@ struct GiftBoxMark: View {
         var c = ctx
         c.scaleBy(x: s, y: s)
         switch kind {
-        case .birthday, .babyShower:
+        case .birthday, .babyShower, .quinceanera:
             let bob = CGFloat(sin(t * 1.6) * 1.5)
             let fill: Color = kind == .babyShower ? Color(hex: "A8D8F0") : Color(hex: "FFC63D")
             var string = Path()
@@ -150,7 +151,7 @@ struct GiftBoxMark: View {
             c.stroke(string, with: .color(Color(hex: "8A7A6A")), lineWidth: 0.8)
             c.fill(Path(ellipseIn: CGRect(x: 47.5, y: 4 + bob, width: 9, height: 11.5)), with: .color(fill))
             c.fill(Path(ellipseIn: CGRect(x: 49.3, y: 6 + bob, width: 2.4, height: 3.4)), with: .color(Color.white.opacity(0.5)))
-        case .anniversary, .wedding:
+        case .anniversary, .wedding, .valentines, .engagement, .bridalShower:
             let beat = CGFloat(1 + 0.08 * max(0, sin(t * 3)))
             let heart = SceneProps.heartPath(center: CGPoint(x: 9, y: 14), r: 5 * beat)
             c.fill(heart, with: .color(Color(hex: "E8506A")))
@@ -159,7 +160,7 @@ struct GiftBoxMark: View {
             let r = CGFloat(3 + 2.5 * a)
             c.fill(SparkleShape().path(in: CGRect(x: 52 - r, y: 11 - r, width: r * 2, height: r * 2)),
                    with: .color(Workshop.brass.opacity(0.6 + 0.4 * a)))
-        case .christmas:
+        case .christmas, .secretSanta:
             var leafA = c
             leafA.translateBy(x: 41, y: 24)
             leafA.rotate(by: .degrees(-30))

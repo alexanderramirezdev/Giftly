@@ -37,7 +37,7 @@ struct OccasionScene: View {
         let w = size.width
         let h = size.height
         switch kind {
-        case .birthday:
+        case .birthday, .quinceanera:
             let colors: [Color] = [Color(hex: "E8503F"), Color(hex: "FFC63D"), Color(hex: "3B7DD8"), Color(hex: "7BC67B")]
             risingBalloons(c, size: size, t: t, colors: colors)
             SceneProps.cake(c, x: w * 0.82, y: h - 30, t: t)
@@ -48,7 +48,7 @@ struct OccasionScene: View {
             risingBalloons(c, size: size, t: t, colors: pastels)
             SceneProps.sparkles(c, size: size, t: t, count: 5)
 
-        case .anniversary, .wedding:
+        case .anniversary, .wedding, .valentines, .engagement, .bridalShower:
             SceneProps.particles(c, size: size, t: t, kind: .heartsRising, count: 14, seed: 2)
             SceneProps.sparkles(c, size: size, t: t, count: 4)
 
@@ -66,11 +66,15 @@ struct OccasionScene: View {
             }
             SceneProps.sparkles(c, size: size, t: t, count: 7)
 
-        case .christmas:
+        case .easter, .mothersDay:
+            SceneProps.particles(c, size: size, t: t, kind: .petals, count: 16)
+            SceneProps.sparkles(c, size: size, t: t, count: 3)
+
+        case .christmas, .secretSanta:
             SceneProps.stringLights(c, size: size, y: 6, t: t)
             SceneProps.particles(c, size: size, t: t, kind: .snow, count: 22)
 
-        case .holiday, .justBecause, .other:
+        default:
             SceneProps.sparkles(c, size: size, t: t, count: 6)
         }
     }

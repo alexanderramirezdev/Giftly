@@ -58,6 +58,99 @@ enum ListScanner {
         return lines
     }
 
+    // MARK: Text message screenshots
+
+    /// What a texted wish list looks like after reading the screenshots.
+    struct Conversation {
+        /// Lines tagged "Them:" (left bubbles) or "Me:" (right bubbles).
+        var transcript: String
+        /// The name shown at the top of the thread, if one was readable.
+        var contactName: String
+    }
+
+    /// Reads screenshots of a Messages thread. Bubbles on the left are the
+    /// other person, on the right are you; times, "Delivered", the status bar
+    /// and other chrome are dropped.
+    static func readConversation(in images: [UIImage]) async -> Conversation {
+        var lines: [String] = []
+        var contact = ""
+        for image in images {
+            guard let cgImage = image.cgImage else { continue }
+            let orientation = cgOrientation(for: image.imageOrientation)
+            let page = await Task.detached(priority: .userInitiated) {
+                ListScanner.recognizeConversation(cgImage, orientation: orientation)
+            }.value
+            lines.append(contentsOf: page.lines)
+            if contact.isEmpty { contact = page.contact }
+        }
+        return Conversation(transcript: lines.joined(separator: "\n"), contactName: contact)
+    }
+
+    nonisolated static func recognizeConversation(_ cgImage: CGImage, orientation: CGImagePropertyOrientation) -> (lines: [String], contact: String) {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
+        do { try handler.perform([request]) } catch { return ([], "") }
+
+        let observations: [VNRecognizedTextObservation] = (request.results ?? [])
+            .sorted { $0.boundingBox.minY > $1.boundingBox.minY }
+        var lines: [String] = []
+        var contact = ""
+        var lastSide = ""
+        var lastBottom: CGFloat = 2
+        for o in observations {
+            guard let text = o.topCandidates(1).first?.string.trimmingCharacters(in: .whitespaces),
+                  !text.isEmpty else { continue }
+            let box = o.boundingBox            // normalized, origin bottom left
+            // Status bar: the very top of the screen.
+            if box.minY > 0.94 { continue }
+            // Thread header: a short centered name near the top.
+            if box.minY > 0.80 {
+                if contact.isEmpty, abs(box.midX - 0.5) < 0.15, text.count <= 30, !isChrome(text) {
+                    contact = text
+                }
+                continue
+            }
+            // Keyboard or the "iMessage" field at the bottom.
+            if box.maxY < 0.07 { continue }
+            if isChrome(text) { continue }
+
+            let side: String
+            if box.minX > 0.30 && box.midX > 0.55 { side = "Me" }
+            else if box.maxX < 0.75 && box.midX < 0.48 { side = "Them" }
+            else { side = lastSide.isEmpty ? "Them" : lastSide }
+
+            // A bubble that wraps onto a second line continues the same message.
+            let gap = lastBottom - box.maxY
+            if side == lastSide, gap < 0.02, var previous = lines.popLast() {
+                previous += " " + text
+                lines.append(previous)
+            } else {
+                lines.append("\(side): \(text)")
+            }
+            lastSide = side
+            lastBottom = box.minY
+        }
+        return (lines, contact)
+    }
+
+    /// Times, read receipts and other Messages labels that aren't anything anyone said.
+    nonisolated static func isChrome(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let exact: Set<String> = ["delivered", "read", "imessage", "text message", "today", "yesterday",
+                                  "edited", "sent", "not delivered", "sms", "rcs", "keep", "copy",
+                                  "reply", "more", "undo send", "message", "details", "<", "‹"]
+        if exact.contains(t) { return true }
+        if t.hasPrefix("read ") || t.hasPrefix("delivered ") || t.hasPrefix("today ") || t.hasPrefix("yesterday ") { return true }
+        if t.hasPrefix("text message ") || t.hasPrefix("imessage ") { return true }
+        if t.range(of: #"^\d{1,2}:\d{2}\s?(am|pm)?$"#, options: .regularExpression) != nil { return true }
+        let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        if days.contains(where: { t.hasPrefix($0) }) && t.contains(":") { return true }
+        if t.range(of: #"^[a-z]{3}, [a-z]{3} \d{1,2}"#, options: .regularExpression) != nil { return true }
+        return false
+    }
+
     nonisolated static func cgOrientation(for orientation: UIImage.Orientation) -> CGImagePropertyOrientation {
         switch orientation {
         case .up:            return .up

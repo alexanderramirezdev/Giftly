@@ -36,7 +36,9 @@ final class Person {
     var shoeSize: String = ""
     var alreadyHas: String = ""            // things they own, so we don't double up
     var dislikes: String = ""
-    var jobTitle: String = ""
+    var jobTitle: String = ""              // grade (child), school or activities (teen), job (adult)
+    var favoriteCharacters: String = ""    // characters, shows, games, books, artists
+    var devices: String = ""               // game systems and devices they have, so gifts fit
     var contactIdentifier: String = ""     // CNContact.identifier when imported from Contacts
     @Attribute(.externalStorage) var photoData: Data? = nil
 
@@ -75,7 +77,9 @@ final class Person {
             ProfileFact(label: "Age", filled: !ageBand.isEmpty),
             ProfileFact(label: "Interests", filled: !interestsRaw.isEmpty),
             ProfileFact(label: "Favorite colors", filled: !favoriteColors.isEmpty),
-            ProfileFact(label: "Favorite stores", filled: !favoriteStores.isEmpty),
+            ProfileFact(label: profile.storesFact, filled: !favoriteStores.isEmpty),
+            ProfileFact(label: "Favorite characters", filled: !favoriteCharacters.isEmpty),
+            ProfileFact(label: "Devices", filled: !devices.isEmpty),
             ProfileFact(label: "Sizes", filled: !shirtSize.isEmpty || !shoeSize.isEmpty),
             ProfileFact(label: "Already has", filled: !alreadyHas.isEmpty),
             ProfileFact(label: "Doesn't like", filled: !dislikes.isEmpty)
@@ -89,15 +93,112 @@ final class Person {
         var lines: [String] = []
         if !relationship.isEmpty { lines.append("Relationship to the gift giver: \(relationship)") }
         if !ageBand.isEmpty { lines.append("Age group: \(ageBand)") }
-        if !jobTitle.isEmpty { lines.append("Works as: \(jobTitle)") }
+        if !jobTitle.isEmpty { lines.append("\(profile.roleSummaryLabel): \(jobTitle)") }
         if !interestsRaw.isEmpty { lines.append("Interests: \(interestsRaw)") }
         if !favoriteColors.isEmpty { lines.append("Favorite colors: \(favoriteColors)") }
         if !favoriteStores.isEmpty { lines.append("Favorite stores or brands: \(favoriteStores)") }
-        if !shirtSize.isEmpty { lines.append("Shirt size: \(shirtSize)") }
+        if !favoriteCharacters.isEmpty { lines.append("Favorite characters, shows, games or artists: \(favoriteCharacters)") }
+        if !devices.isEmpty { lines.append("Has these devices or game systems (gifts should work with them): \(devices)") }
+        if !shirtSize.isEmpty { lines.append("\(profile.clothingLabel): \(shirtSize)") }
         if !shoeSize.isEmpty { lines.append("Shoe size: \(shoeSize)") }
         if !alreadyHas.isEmpty { lines.append("Already owns (do not suggest): \(alreadyHas)") }
         if !dislikes.isEmpty { lines.append("Dislikes (avoid): \(dislikes)") }
         return lines.joined(separator: "\n")
+    }
+}
+
+extension Person {
+    var profile: AgeProfile { AgeProfile(band: ageBand) }
+}
+
+// MARK: - Past events
+
+extension Occasion {
+    /// The most recent time this occasion already happened, if any. One time
+    /// events: their date once it's gone by. Yearly ones: last year's date.
+    var lastOccurrence: Date? {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: .now)
+        let day = cal.startOfDay(for: date)
+        if !repeatsAnnually { return day < today ? day : nil }
+        let days = daysUntilNext
+        guard days > 0, let next = cal.date(byAdding: .day, value: days, to: today) else { return nil }
+        let last = cal.date(byAdding: .year, value: -1, to: next)
+        // Only count it if the occasion existed back then.
+        if let last, last >= cal.startOfDay(for: createdAt) { return last }
+        return nil
+    }
+
+    /// Shows up under Past events: a one time event that's over, or a yearly
+    /// one that happened in the last 90 days and had gift ideas.
+    var belongsInPast: Bool {
+        guard kind != .justBecause, let last = lastOccurrence else { return false }
+        if !repeatsAnnually { return true }
+        let days = Calendar.current.dateComponents([.day], from: last, to: .now).day ?? 999
+        return days <= 90 && wishCount > 0
+    }
+}
+
+/// Labels and examples for the profile form, by age group, so a child's
+/// profile asks about grade, characters and kids sizes while an adult's asks
+/// about work and stores.
+struct AgeProfile {
+    let band: String
+
+    var isChild: Bool { band == "child" }
+    var isTeen: Bool { band == "teen" }
+    var isAdult: Bool { band == "adult" }
+
+    var rolePlaceholder: String {
+        switch band {
+        case "child": return "Grade (e.g. 2nd grade)"
+        case "teen":  return "School, team or club (optional)"
+        case "adult": return "Works as (optional)"
+        default:      return "School or work (optional)"
+        }
+    }
+    var roleSummaryLabel: String {
+        switch band {
+        case "child": return "Grade"
+        case "teen":  return "School, team or club"
+        case "adult": return "Works as"
+        default:      return "School or work"
+        }
+    }
+    var interestsPlaceholder: String {
+        switch band {
+        case "child": return "dinosaurs, drawing, soccer, slime…"
+        case "teen":  return "gaming, basketball, makeup, music…"
+        case "adult": return "cooking, golf, coffee, hiking…"
+        default:      return "what they're into…"
+        }
+    }
+    var showsCharacters: Bool { !isAdult }
+    var charactersPlaceholder: String {
+        isChild ? "Favorite characters or shows (Bluey, Mario…)"
+                : "Favorite shows, games or artists"
+    }
+    var storesPlaceholder: String {
+        isChild ? "Favorite toy brands (LEGO, Barbie, Hot Wheels…)" : "Favorite stores or brands"
+    }
+    var storesFact: String { isChild ? "Favorite brands" : "Favorite stores" }
+    var devicesPlaceholder: String {
+        switch band {
+        case "child": return "Game systems or tablets (Switch, iPad…)"
+        case "teen":  return "Consoles and devices (PS5, iPhone, gaming PC…)"
+        default:      return "Devices they use (iPhone, Kindle, Xbox…)"
+        }
+    }
+    var clothingLabel: String { isChild ? "Clothing size" : "Shirt size" }
+    var clothingPlaceholder: String {
+        switch band {
+        case "child": return "Clothing size (e.g. 7/8 or kids M)"
+        case "teen":  return "Shirt size (S, M, L)"
+        default:      return "Shirt size"
+        }
+    }
+    var shoePlaceholder: String {
+        isChild ? "Shoe size (e.g. 13 kids or 2Y)" : "Shoe size"
     }
 }
 
@@ -211,41 +312,129 @@ final class Occasion {
 }
 
 enum OccasionKind: String, CaseIterable, Codable {
-    case birthday, christmas, anniversary, holiday, graduation, wedding, babyShower, justBecause, other
+    // Stored as a raw string, so adding kinds never changes the database.
+    case birthday, anniversary, justBecause
+    case christmas, hanukkah, valentines, mothersDay, fathersDay, easter, eid, diwali, lunarNewYear, holiday
+    case graduation, engagement, wedding, bridalShower, babyShower, baptism, quinceanera, housewarming, newJob, retirement
+    case teacherAppreciation, secretSanta, thankYou, getWell
+    case other
 
     var display: String {
         switch self {
-        case .birthday:    return "Birthday"
-        case .christmas:   return "Christmas"
-        case .anniversary: return "Anniversary"
-        case .holiday:     return "Holiday"
-        case .graduation:  return "Graduation"
-        case .wedding:     return "Wedding"
-        case .babyShower:  return "Baby Shower"
-        case .justBecause: return "Just Because"
-        case .other:       return "Other"
+        case .birthday:            return "Birthday"
+        case .anniversary:         return "Anniversary"
+        case .justBecause:         return "Just Because"
+        case .christmas:           return "Christmas"
+        case .hanukkah:            return "Hanukkah"
+        case .valentines:          return "Valentine's Day"
+        case .mothersDay:          return "Mother's Day"
+        case .fathersDay:          return "Father's Day"
+        case .easter:              return "Easter"
+        case .eid:                 return "Eid"
+        case .diwali:              return "Diwali"
+        case .lunarNewYear:        return "Lunar New Year"
+        case .holiday:             return "Other Holiday"
+        case .graduation:          return "Graduation"
+        case .engagement:          return "Engagement"
+        case .wedding:             return "Wedding"
+        case .bridalShower:        return "Bridal Shower"
+        case .babyShower:          return "Baby Shower"
+        case .baptism:             return "Baptism or Christening"
+        case .quinceanera:         return "Quinceañera"
+        case .housewarming:        return "Housewarming"
+        case .newJob:              return "New Job"
+        case .retirement:          return "Retirement"
+        case .teacherAppreciation: return "Teacher Gift"
+        case .secretSanta:         return "Secret Santa"
+        case .thankYou:            return "Thank You"
+        case .getWell:             return "Get Well"
+        case .other:               return "Other"
         }
     }
 
     var symbol: String {
         switch self {
-        case .birthday:    return "birthday.cake"
-        case .christmas:   return "gift"
-        case .anniversary: return "heart"
-        case .holiday:     return "sparkles"
-        case .graduation:  return "graduationcap"
-        case .wedding:     return "heart.circle"
-        case .babyShower:  return "figure.and.child.holdinghands"
-        case .justBecause: return "star"
-        case .other:       return "calendar"
+        case .birthday:            return "birthday.cake"
+        case .anniversary:         return "heart"
+        case .justBecause:         return "star"
+        case .christmas:           return "gift"
+        case .hanukkah:            return "flame"
+        case .valentines:          return "heart.fill"
+        case .mothersDay:          return "camera.macro"
+        case .fathersDay:          return "mustache"
+        case .easter:              return "hare"
+        case .eid:                 return "moon.stars"
+        case .diwali:              return "sparkle"
+        case .lunarNewYear:        return "fireworks"
+        case .holiday:             return "sparkles"
+        case .graduation:          return "graduationcap"
+        case .engagement:          return "suit.diamond"
+        case .wedding:             return "heart.circle"
+        case .bridalShower:        return "party.popper"
+        case .babyShower:          return "figure.and.child.holdinghands"
+        case .baptism:             return "drop"
+        case .quinceanera:         return "crown"
+        case .housewarming:        return "house"
+        case .newJob:              return "briefcase"
+        case .retirement:          return "beach.umbrella"
+        case .teacherAppreciation: return "book.closed"
+        case .secretSanta:         return "gift.circle"
+        case .thankYou:            return "hand.thumbsup"
+        case .getWell:             return "cross.case"
+        case .other:               return "calendar"
         }
+    }
+
+    /// Groups for the type picker.
+    enum KindGroup: String, CaseIterable {
+        case everyday = "Everyday", holidays = "Holidays", milestones = "Milestones", thanks = "Thanks and care", more = "More"
+    }
+
+    var group: KindGroup {
+        switch self {
+        case .birthday, .anniversary, .justBecause: return .everyday
+        case .christmas, .hanukkah, .valentines, .mothersDay, .fathersDay, .easter, .eid, .diwali, .lunarNewYear, .holiday:
+            return .holidays
+        case .graduation, .engagement, .wedding, .bridalShower, .babyShower, .baptism, .quinceanera, .housewarming, .newJob, .retirement:
+            return .milestones
+        case .teacherAppreciation, .secretSanta, .thankYou, .getWell: return .thanks
+        case .other: return .more
+        }
+    }
+
+    static func kinds(in group: KindGroup) -> [OccasionKind] {
+        allCases.filter { $0.group == group }
     }
 
     /// Does this kind recur every year by default?
     var defaultRepeats: Bool {
         switch self {
-        case .birthday, .anniversary, .christmas, .holiday: return true
-        default: return false
+        case .birthday, .anniversary: return true
+        default: return group == .holidays
+        }
+    }
+
+    /// The next date for holidays with a known date, so picking one fills it in.
+    /// Holidays that follow other calendars (Hanukkah, Eid, Diwali, Lunar New
+    /// Year) are left for the parent to set.
+    var nextKnownDate: Date? {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: .now)
+        let year = cal.component(.year, from: today)
+        func upcoming(_ make: (Int) -> Date?) -> Date? {
+            if let d = make(year), d >= today { return d }
+            return make(year + 1)
+        }
+        func fixed(_ month: Int, _ day: Int) -> (Int) -> Date? {
+            { y in cal.date(from: DateComponents(year: y, month: month, day: day)) }
+        }
+        switch self {
+        case .christmas:  return upcoming(fixed(12, 25))
+        case .valentines: return upcoming(fixed(2, 14))
+        case .mothersDay: return upcoming { SeasonalDates.nthWeekday(n: 2, weekday: 1, month: 5, year: $0) }
+        case .fathersDay: return upcoming { SeasonalDates.nthWeekday(n: 3, weekday: 1, month: 6, year: $0) }
+        case .easter:     return upcoming { SeasonalDates.easter(year: $0) }
+        default:          return nil
         }
     }
 }
@@ -277,8 +466,20 @@ final class Wish {
     @Relationship(deleteRule: .cascade, inverse: \ProductMatch.wish)
     var matches: [ProductMatch]? = []
 
-    // the parent's committed choice (also present in `matches`)
-    var chosenMatch: ProductMatch?
+    /// The parent's committed choice: the match flagged isChosen. Computed
+    /// (not a second relationship) because CloudKit requires every
+    /// relationship to have an inverse.
+    var chosenMatch: ProductMatch? {
+        get { (matches ?? []).first { $0.isChosen } }
+        set {
+            var all = matches ?? []
+            if let pick = newValue, !all.contains(where: { $0 === pick }) {
+                all.append(pick)
+                matches = all
+            }
+            for m in all { m.isChosen = (newValue != nil && m === newValue) }
+        }
+    }
 
     init(rawText: String = "",
          addedBy: Role = .parent,

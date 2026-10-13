@@ -2,7 +2,8 @@
 //  ScanListView.swift
 //  Giftly
 //
-//  Scan a kid's wish list (or letter to Santa) into the app:
+//  Scan a kid's wish list (or letter to Santa), or a list someone texted
+//  (screenshots or pasted message), into the app:
 //    1. scan with the document camera, or pick a photo
 //    2. Vision reads the text on device (handwriting included)
 //    3. Foundation Models cleans it into wishes and finds the child's name
@@ -23,6 +24,10 @@ struct ScanItem: Identifiable, Hashable {
 }
 
 struct ScanListView: View {
+    /// Paper list (camera or photo) or a texted list (screenshots or pasted text).
+    enum Source { case paper, texts }
+    var source: Source = .paper
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(GiftIntelligence.self) private var brain
@@ -36,6 +41,7 @@ struct ScanListView: View {
     @State private var step: Step = .start
     @State private var showingCamera = false
     @State private var photoItem: PhotosPickerItem?
+    @State private var screenshotItems: [PhotosPickerItem] = []
     @State private var items: [ScanItem] = []
     @State private var person: Person?
     @State private var creatingPerson = false
@@ -46,7 +52,7 @@ struct ScanListView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Scan a wish list")
+                .navigationTitle(source == .texts ? "From a text" : "Scan a wish list")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -66,6 +72,10 @@ struct ScanListView: View {
                     guard let item else { return }
                     Task { await loadPhoto(item) }
                 }
+                .onChange(of: screenshotItems) { _, picked in
+                    guard !picked.isEmpty else { return }
+                    Task { await loadScreenshots(picked) }
+                }
         }
     }
 
@@ -81,7 +91,46 @@ struct ScanListView: View {
 
     // MARK: Steps
 
+    @ViewBuilder
     private var startView: some View {
+        if source == .texts { textsStartView } else { paperStartView }
+    }
+
+    /// Someone texted what they want: pick the screenshots, or paste the message.
+    private var textsStartView: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            ElfView(pose: .reading, size: 110)
+            Text("Got their wish list by text?")
+                .font(.workshop(24, weight: .bold))
+                .multilineTextAlignment(.center)
+            Text("Screenshot the conversation, or copy the message. \(Workshop.elfName) picks out what they asked for and skips the chit chat. It all stays on your iPhone.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+            PhotosPicker(selection: $screenshotItems, maxSelectionCount: 6, matching: .screenshots) {
+                Label("Choose screenshots", systemImage: "photo.stack")
+            }
+            .buttonStyle(GiftlyPrimaryButtonStyle())
+            PasteButton(payloadType: String.self) { strings in
+                let text = strings.joined(separator: "\n")
+                Task { await readPasted(text) }
+            }
+            .buttonBorderShape(.capsule)
+            .labelStyle(.titleAndIcon)
+            Text("Tip: in Messages, touch and hold a message, tap Copy, then come back and Paste.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(24)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .giftlyBackground()
+    }
+
+    private var paperStartView: some View {
         VStack(spacing: 18) {
             Spacer()
             ElfView(pose: .reading, size: 110)
@@ -137,11 +186,16 @@ struct ScanListView: View {
             Text("\(Workshop.elfName) couldn't find any wishes in that photo.")
                 .font(.workshop(17, weight: .medium))
                 .multilineTextAlignment(.center)
-            Text("Try again in brighter light, with the whole page in view.")
+            Text(source == .texts
+                 ? "Make sure the messages with the wishes are in the screenshot, or copy and paste the message instead."
+                 : "Try again in brighter light, with the whole page in view.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("Try again") { step = .start }
+            Button("Try again") {
+                screenshotItems = []
+                step = .start
+            }
                 .buttonStyle(.bordered)
         }
         .padding(24)
@@ -311,6 +365,38 @@ struct ScanListView: View {
         }
     }
 
+    private func loadScreenshots(_ picked: [PhotosPickerItem]) async {
+        step = .reading
+        var images: [UIImage] = []
+        for item in picked {
+            if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                images.append(image)
+            }
+        }
+        screenshotItems = []
+        guard !images.isEmpty else {
+            step = .nothingFound
+            return
+        }
+        let conversation = await ListScanner.readConversation(in: images)
+        let parsed = await brain.parseConversation(conversation.transcript, contactName: conversation.contactName)
+        finish(items: parsed.items, name: parsed.forName)
+    }
+
+    private func readPasted(_ text: String) async {
+        step = .reading
+        let parsed = await brain.parseConversation(text)
+        finish(items: parsed.items, name: parsed.forName)
+    }
+
+    private func finish(items found: [String], name: String) {
+        items = found.map { ScanItem(text: $0) }
+        preselectPerson(named: name)
+        // A texted list is usually for that person's next occasion, not
+        // necessarily Christmas, but Christmas stays the default this time of year.
+        step = items.isEmpty ? .nothingFound : .review
+    }
+
     private func read(_ images: [UIImage]) async {
         step = .reading
         let text = await ListScanner.recognizeText(in: images)
@@ -323,8 +409,12 @@ struct ScanListView: View {
     /// Match the signed name to someone already in the app, or offer to add them.
     private func preselectPerson(named name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstToken = trimmed.split(separator: " ").first.map(String.init) ?? trimmed
         if !trimmed.isEmpty,
-           let match = people.first(where: { $0.firstName.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+           let match = people.first(where: {
+               $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+                   || $0.firstName.caseInsensitiveCompare(firstToken) == .orderedSame
+           }) {
             person = match
             creatingPerson = false
         } else if !trimmed.isEmpty {

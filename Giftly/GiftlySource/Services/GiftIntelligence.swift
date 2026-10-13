@@ -114,6 +114,15 @@ struct ScannedWishList {
 }
 
 @Generable
+struct TextedWishList {
+    @Guide(description: "First name of the person the gifts are for, if the messages say (it may be the other person, or a child they mention like 'for Mia'). Otherwise an empty string.")
+    var forName: String
+
+    @Guide(description: "Each gift they asked for or agreed to, in plain searchable words, 2 to 8 words each, brand and model names kept. Leave out chit chat, questions, prices, times, links text, and anything that isn't a gift.")
+    var items: [String]
+}
+
+@Generable
 struct EventReading {
     @Guide(description: "True only if this event is an occasion where people usually give gifts: a birthday, birthday party, holiday, anniversary, wedding, baby shower, graduation, or similar")
     var isGiftOccasion: Bool
@@ -520,6 +529,75 @@ final class GiftIntelligence {
         return fallback
     }
 
+    /// Gift wishes from a text conversation (screenshots or pasted text).
+    /// Lines may start with "Them:" (the other person) or "Me:" (the parent).
+    func parseConversation(_ transcript: String, contactName: String = "") async -> (forName: String, items: [String]) {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return (contactName, []) }
+
+        #if canImport(FoundationModels)
+        if isModelAvailable {
+            let instructions = Self.textedListInstructions
+            var prompt = "Text conversation:\n\(String(trimmed.prefix(3000)))"
+            if !contactName.isEmpty { prompt += "\nThe other person in the thread is named: \(contactName)" }
+            do {
+                let result = try await withTimeout(15) {
+                    let session = LanguageModelSession(instructions: instructions)
+                    let response = try await session.respond(to: prompt, generating: TextedWishList.self)
+                    return response.content
+                }
+                var seen = Set<String>()
+                var items: [String] = []
+                for raw in result.items {
+                    let item = Self.noDashes(raw)
+                    if !item.isEmpty, seen.insert(item.lowercased()).inserted { items.append(item) }
+                }
+                if !items.isEmpty {
+                    let name = Self.noDashes(result.forName)
+                    return (name.isEmpty ? contactName : name, items)
+                }
+            } catch {
+                // fall through
+            }
+        }
+        #endif
+        return (contactName, Self.fallbackConversationParse(trimmed))
+    }
+
+    /// Without the model: the other person's lines, with "I want" style lead ins
+    /// stripped and lists split on commas and "and".
+    static func fallbackConversationParse(_ text: String) -> [String] {
+        let leadIns = ["i would love", "i'd love", "i really want", "i want", "can i get", "could i get",
+                       "can you get me", "maybe", "also", "and", "a ", "an ", "the "]
+        let chatter = ["lol", "haha", "ok", "okay", "thanks", "thank you", "love you", "yes", "no", "sure", "omg"]
+        var out: [String] = []
+        for raw in text.split(whereSeparator: { $0.isNewline }) {
+            var line = String(raw).trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("Me:") { continue }
+            if line.hasPrefix("Them:") { line = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces) }
+            if line.hasSuffix("?") { continue }
+            for piece in line.components(separatedBy: CharacterSet(charactersIn: ",;\n")) {
+                for part in piece.components(separatedBy: " and ") {
+                    var item = part.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                    var changed = true
+                    while changed {
+                        changed = false
+                        for lead in leadIns where item.lowercased().hasPrefix(lead) {
+                            item = String(item.dropFirst(lead.count)).trimmingCharacters(in: .whitespaces)
+                            changed = true
+                        }
+                    }
+                    let words = item.split(separator: " ").count
+                    if words >= 1, words <= 8, !chatter.contains(item.lowercased()) {
+                        out.append(noDashes(item))
+                    }
+                }
+            }
+        }
+        var seen = Set<String>()
+        return out.filter { seen.insert($0.lowercased()).inserted }
+    }
+
     /// Without the model: one wish per line, numbering and bullets stripped,
     /// greetings and sign offs dropped.
     static func fallbackListParse(_ text: String) -> (childName: String, items: [String]) {
@@ -702,6 +780,19 @@ final class GiftIntelligence {
     Keep brand and character names. Split lines that list two things. Leave out \
     greetings, sign offs, numbering, and anything that is not a gift. Never invent \
     items that aren't on the list. \
+    Never use dashes, hyphens, or em dashes in any output; write plain words \
+    separated by spaces or commas.
+    """
+
+    private static let textedListInstructions = """
+    You read a text message conversation where someone says what they want as a \
+    gift. Lines starting with "Them:" are the other person; lines starting with \
+    "Me:" are the gift giver. Return every gift the other person asked for, plus \
+    anything the gift giver suggested that the other person agreed to. Turn each \
+    into a short, searchable phrase with brand, model, size and color kept (for \
+    example "the blue one in a medium" after "Nike hoodie" becomes "blue Nike hoodie \
+    medium"). Leave out greetings, questions, jokes, prices, times, and anything \
+    that isn't a gift. Never invent items. \
     Never use dashes, hyphens, or em dashes in any output; write plain words \
     separated by spaces or commas.
     """

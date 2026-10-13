@@ -26,7 +26,7 @@ struct OccasionDetailView: View {
                     BudgetBar(spentCents: occasion.committedTotalCents,
                               budgetCents: occasion.budgetCents)
                 }
-                .listRowBackground(GiftlyTheme.card)
+                .listRowBackground(GiftlyTheme.glassRow)
             }
 
             if let url = occasion.inviteURL {
@@ -35,7 +35,7 @@ struct OccasionDetailView: View {
                         Label("Open the invite", systemImage: "envelope.open")
                     }
                 }
-                .listRowBackground(GiftlyTheme.card)
+                .listRowBackground(GiftlyTheme.glassRow)
             }
 
             Section("Wishlist") {
@@ -44,7 +44,7 @@ struct OccasionDetailView: View {
                     ContentUnavailableView {
                         Label("No wishes yet", systemImage: "sparkles")
                     } description: {
-                        Text("Add the first wish in plain words. Giftly finds the best price while you keep going.")
+                        Text("Add the first wish in plain words. Pip finds the best price while you keep going.")
                     } actions: {
                         Button { Haptics.tap(); showingAddWish = true } label: {
                             Text("Add a gift idea")
@@ -60,7 +60,7 @@ struct OccasionDetailView: View {
                     } label: {
                         WishRow(wish: wish)
                     }
-                    .listRowBackground(GiftlyTheme.card)
+                    .listRowBackground(GiftlyTheme.glassRow)
                     // Swipe right: mark bought, or jump straight to the store.
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         Button {
@@ -217,17 +217,25 @@ struct OccasionEditView: View {
     @State private var hasBudget = false
     @State private var budget = 100.0
     @State private var inviteLink = ""
+    /// True until the parent types their own title, so changing the type
+    /// updates "Alex's Birthday" to "Alex's Graduation".
+    @State private var titleIsAuto = true
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Occasion") {
-                    TextField("Title", text: $title)
                     Picker("Type", selection: $kind) {
-                        ForEach(OccasionKind.allCases, id: \.self) {
-                            Label($0.display, systemImage: $0.symbol).tag($0)
+                        ForEach(OccasionKind.KindGroup.allCases, id: \.self) { group in
+                            Section(group.rawValue) {
+                                ForEach(OccasionKind.kinds(in: group), id: \.self) {
+                                    Label($0.display, systemImage: $0.symbol).tag($0)
+                                }
+                            }
                         }
                     }
+                    .pickerStyle(.navigationLink)
+                    TextField("Title", text: titleBinding)
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                     Toggle("Repeats every year", isOn: $repeatsAnnually)
                 }
@@ -248,8 +256,9 @@ struct OccasionEditView: View {
             }
             .navigationTitle(occasion == nil ? "New Occasion" : "Edit Occasion")
             .onChange(of: kind) { _, newKind in
-                if title.isEmpty { title = "\(person.name)'s \(newKind.display)" }
+                if titleIsAuto || title.isEmpty { title = autoTitle(for: newKind) }
                 repeatsAnnually = newKind.defaultRepeats
+                if let known = newKind.nextKnownDate { date = known }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -261,10 +270,22 @@ struct OccasionEditView: View {
         }
     }
 
+    private var titleBinding: Binding<String> {
+        Binding(
+            get: { title },
+            set: { title = $0; titleIsAuto = false }
+        )
+    }
+
+    private func autoTitle(for kind: OccasionKind) -> String {
+        "\(person.firstName)'s \(kind.display)"
+    }
+
     private func load() {
-        if title.isEmpty { title = "\(person.name)'s \(kind.display)" }
+        if title.isEmpty { title = autoTitle(for: kind) }
         guard let o = occasion else { return }
         title = o.title; kind = o.kind; date = o.date
+        titleIsAuto = (o.title == autoTitle(for: o.kind))
         repeatsAnnually = o.repeatsAnnually
         hasBudget = o.hasBudget; budget = Double(o.budgetCents) / 100
         inviteLink = o.inviteURLString

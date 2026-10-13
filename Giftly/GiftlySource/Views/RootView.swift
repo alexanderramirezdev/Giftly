@@ -11,7 +11,6 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppSession.self) private var session
-    @AppStorage(GiftlySeason.settingKey) private var seasonSetting = "auto"
 
     @State private var showingGate = false
 
@@ -44,8 +43,9 @@ struct RootView: View {
             )
             .presentationDetents([.large])
         }
-        // The app's accent follows the season (or the parent's pick in Settings).
-        .tint(GiftlySeason.resolve(setting: seasonSetting).accent)
+        // Text and buttons keep one steady, readable brand color; the season
+        // shows in the backgrounds and scenes instead.
+        .tint(GiftlyTheme.cranberry)
     }
 }
 
@@ -62,7 +62,7 @@ struct OnboardingView: View {
             Image(systemName: "gift.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.tint)
-            Text("Giftly")
+            Text("Pip")
                 .font(.largeTitle.bold())
             Text("Every wishlist, every occasion — with real prices, so gifting is one calm list instead of a dozen tabs.")
                 .font(.body)
@@ -72,7 +72,7 @@ struct OnboardingView: View {
 
             Spacer()
 
-            Text("Who's using Giftly?")
+            Text("Who's using Pip?")
                 .font(.headline)
 
             VStack(spacing: 12) {

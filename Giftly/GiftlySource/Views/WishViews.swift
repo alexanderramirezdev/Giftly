@@ -41,7 +41,7 @@ struct AddWishView: View {
                 } header: {
                     Text("What do they want?")
                 } footer: {
-                    Text("Add it in plain words. Giftly finds the best price in the background while you keep going.")
+                    Text("Add it in plain words. Pip finds the best price in the background while you keep going.")
                 }
 
                 if !entitlements.isPlus {
@@ -173,6 +173,14 @@ struct QuickAddWishView: View {
     private var personChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
+                // Adding someone new comes first.
+                ChoiceChip(selected: false) {
+                    Haptics.tap()
+                    fieldFocused = false
+                    showingNewPerson = true
+                } content: {
+                    Label("New", systemImage: "plus")
+                }
                 ForEach(people, id: \.persistentModelID) { p in
                     ChoiceChip(selected: isSelected(p)) {
                         select(person: p)
@@ -182,13 +190,6 @@ struct QuickAddWishView: View {
                             Text(p.firstName)
                         }
                     }
-                }
-                ChoiceChip(selected: false) {
-                    Haptics.tap()
-                    fieldFocused = false
-                    showingNewPerson = true
-                } content: {
-                    Label("New", systemImage: "plus")
                 }
             }
             .padding(.vertical, 2)

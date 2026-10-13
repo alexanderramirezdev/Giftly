@@ -2,7 +2,8 @@
 //  ElfView.swift
 //  Giftly
 //
-//  Pip, the workshop's head elf. Drawn entirely in code (no image assets)
+//  Pip, the workshop's head elf (in the Holiday Workshop; the rest of the
+//  year Pip is a gift box buddy, see BoxBuddy.swift). Drawn entirely in code (no image assets)
 //  on a 100 x 140 grid: big expressive eyes, brows, droopy hat with a fur
 //  brim, curly bell toed boots, and a wrapped gift he hugs while idle.
 //  Four poses, all animated, all static under Reduce Motion.
@@ -102,16 +103,33 @@ struct ElfStyle {
 struct ElfView: View {
     var pose: ElfPose = .idle
     var size: CGFloat = 120
-    /// nil = Pip, dressed for the current season.
+    /// nil = Pip. A style means one of the elf crew.
     var style: ElfStyle? = nil
+    /// Show Pip for this season instead of the current one (Settings preview).
+    var season: GiftlySeason? = nil
 
     @AppStorage(GiftlySeason.settingKey) private var seasonSetting = "auto"
     @AppStorage(GiftlySeason.previewTouchKey) private var previewTouch = "none"
 
-    /// The look actually drawn.
+    private var shownSeason: GiftlySeason {
+        season ?? GiftlySeason.shown(setting: seasonSetting, preview: previewTouch)
+    }
+
+    /// Pip is an elf in the Holiday Workshop and a gift box buddy the rest of the year.
+    private var isBoxBuddy: Bool { style == nil && shownSeason != .holiday }
+
+    /// The look actually drawn (elf).
     var look: ElfStyle {
         if let style { return style }
-        return ElfStyle.pip(for: GiftlySeason.shown(setting: seasonSetting, preview: previewTouch))
+        return ElfStyle.pip(for: shownSeason)
+    }
+
+    private func render(_ ctx: GraphicsContext, size: CGSize, t: Double) {
+        if isBoxBuddy {
+            BoxBuddy.draw(ctx, size: size, t: t, pose: pose, season: shownSeason)
+        } else {
+            drawElf(ctx, size: size, t: t)
+        }
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -120,12 +138,12 @@ struct ElfView: View {
         Group {
             if reduceMotion {
                 Canvas { ctx, sz in
-                    drawElf(ctx, size: sz, t: 0)
+                    render(ctx, size: sz, t: 0)
                 }
             } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
                     Canvas { ctx, sz in
-                        drawElf(ctx, size: sz, t: timeline.date.timeIntervalSinceReferenceDate)
+                        render(ctx, size: sz, t: timeline.date.timeIntervalSinceReferenceDate)
                     }
                 }
             }
