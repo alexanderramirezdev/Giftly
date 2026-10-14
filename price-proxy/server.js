@@ -39,8 +39,13 @@ const REQUEST_URL = "https://api.brightdata.com/request";
 // DAILY_CAP        max Bright Data calls per UTC day across everyone (cache
 //                  hits are free and don't count). Default 1500.
 // Per client (X-Giftly-Device, else IP): 40 searches and 60 store links an hour.
-const APP_KEY   = (process.env.GIFTLY_APP_KEY || "").trim();   // trim: a pasted space or newline would reject every request
-const ADMIN_KEY = (process.env.GIFTLY_ADMIN_KEY || "").trim();
+// Strip pasted spaces, newlines and wrapping quotes: Render stores the value
+// exactly as typed, so "abc" (with quotes) would reject every request.
+function cleanSecret(v) {
+  return String(v || "").trim().replace(/^(['"])(.*)\1$/, "$2").trim();
+}
+const APP_KEY   = cleanSecret(process.env.GIFTLY_APP_KEY);
+const ADMIN_KEY = cleanSecret(process.env.GIFTLY_ADMIN_KEY);
 const DAILY_CAP = parseInt(process.env.DAILY_CAP || "1500", 10) || 1500;
 const HOUR_MS   = 60 * 60 * 1000;
 const LIMITS    = { search: 40, resolve: 60 };
