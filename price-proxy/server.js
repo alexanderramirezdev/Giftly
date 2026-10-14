@@ -39,8 +39,8 @@ const REQUEST_URL = "https://api.brightdata.com/request";
 // DAILY_CAP        max Bright Data calls per UTC day across everyone (cache
 //                  hits are free and don't count). Default 1500.
 // Per client (X-Giftly-Device, else IP): 40 searches and 60 store links an hour.
-const APP_KEY   = process.env.GIFTLY_APP_KEY || "";
-const ADMIN_KEY = process.env.GIFTLY_ADMIN_KEY || "";
+const APP_KEY   = (process.env.GIFTLY_APP_KEY || "").trim();   // trim: a pasted space or newline would reject every request
+const ADMIN_KEY = (process.env.GIFTLY_ADMIN_KEY || "").trim();
 const DAILY_CAP = parseInt(process.env.DAILY_CAP || "1500", 10) || 1500;
 const HOUR_MS   = 60 * 60 * 1000;
 const LIMITS    = { search: 40, resolve: 60 };
@@ -54,7 +54,7 @@ function safeEqual(a, b) {
 
 function requireAppKey(req, res, next) {
   if (!APP_KEY) return next();                    // not enforced until the env var is set
-  if (safeEqual(req.get("X-Giftly-Key") || "", APP_KEY)) return next();
+  if (safeEqual((req.get("X-Giftly-Key") || "").trim(), APP_KEY)) return next();
   return res.status(401).json({ error: "unauthorized" });
 }
 

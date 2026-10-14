@@ -23,35 +23,23 @@ struct SwipeToDelete<Content: View>: View {
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            if offset < 0 {
-                Button {
-                    confirming = true
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "trash.fill")
-                        Text("Delete").font(.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(width: revealWidth)
-                    .frame(maxHeight: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.red))
-                }
-                .buttonStyle(.plain)
-                .padding(.vertical, 4)
-                .transition(.opacity)
-            }
-
             content()
                 .offset(x: offset)
-                .overlay {
-                    // While open, a tap anywhere on the row just closes it.
-                    if offset < 0 {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture { close() }
-                    }
-                }
                 .simultaneousGesture(drag)
+
+            // While open: the Delete button sits on top, and the rest of the
+            // row is a tap catcher that just closes it. (Before, the tap
+            // catcher covered the button too, so Delete only closed the row.)
+            if offset < 0 {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { close() }
+                        .gesture(drag)
+                    deleteButton
+                }
+                .transition(.opacity)
+            }
         }
         .clipped()
         .contextMenu {
@@ -64,14 +52,35 @@ struct SwipeToDelete<Content: View>: View {
         .accessibilityAction(named: "Delete \(itemName)") { confirming = true }
         .confirmationDialog("Delete \(itemName)?", isPresented: $confirming, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                close()
                 Haptics.success()
+                offset = 0
+                startOffset = 0
                 onDelete()
             }
             Button("Cancel", role: .cancel) { close() }
         } message: {
             if !detail.isEmpty { Text(detail) }
         }
+    }
+
+    private var deleteButton: some View {
+        Button {
+            Haptics.tap()
+            confirming = true
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "trash.fill")
+                Text("Delete").font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(width: revealWidth)
+            .frame(maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.red))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+        .accessibilityLabel("Delete \(itemName)")
     }
 
     private var drag: some Gesture {

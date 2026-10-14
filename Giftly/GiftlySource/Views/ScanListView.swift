@@ -52,7 +52,7 @@ struct ScanListView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle(source == .texts ? "From a text" : "Scan a wish list")
+                .navigationTitle(source == .texts ? "From a Text" : "Scan a Wish List")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -101,7 +101,7 @@ struct ScanListView: View {
         VStack(spacing: 18) {
             Spacer()
             ElfView(pose: .reading, size: 110)
-            Text("Got their wish list by text?")
+            Text("Got Their Wish List by Text?")
                 .font(.workshop(24, weight: .bold))
                 .multilineTextAlignment(.center)
             Text("Screenshot the conversation, or copy the message. \(Workshop.elfName) picks out what they asked for and skips the chit chat. It all stays on your iPhone.")
@@ -187,7 +187,7 @@ struct ScanListView: View {
                 .font(.workshop(17, weight: .medium))
                 .multilineTextAlignment(.center)
             Text(source == .texts
-                 ? "Make sure the messages with the wishes are in the screenshot, or copy and paste the message instead."
+                 ? "Make sure the messages with the wishes are in the screenshot and the keyboard is closed, or copy and paste the message instead."
                  : "Try again in brighter light, with the whole page in view.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -212,13 +212,13 @@ struct ScanListView: View {
                         .textInputAutocapitalization(.words)
                 }
             } header: {
-                Text("Whose list is it?")
+                Text("Whose List Is It?")
             }
 
             Section {
                 targetPicker
             } header: {
-                Text("Add it to")
+                Text("Add It To")
             }
 
             Section {
@@ -323,8 +323,8 @@ struct ScanListView: View {
     }
 
     private var foundTitle: String {
-        let noun: String = items.count == 1 ? "wish" : "wishes"
-        return "\(Workshop.elfName) found \(items.count) \(noun)"
+        let noun: String = items.count == 1 ? "Wish" : "Wishes"
+        return "\(Workshop.elfName) Found \(items.count) \(noun)"
     }
 
     private var ownerName: String {

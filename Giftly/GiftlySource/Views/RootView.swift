@@ -15,6 +15,7 @@ struct RootView: View {
     @State private var showingGate = false
 
     var body: some View {
+        AppLockContainer {
         Group {
             if !session.hasCompletedOnboarding {
                 if AppSession.kidModeEnabled {
@@ -30,6 +31,7 @@ struct RootView: View {
                     KidHomeView(onRequestParent: { showingGate = true })
                 }
             }
+        }
         }
         .sheet(isPresented: $showingGate) {
             ParentalGateView(

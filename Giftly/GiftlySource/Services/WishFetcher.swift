@@ -30,6 +30,13 @@ import UIKit
 @MainActor
 enum WishFetcher {
 
+    /// The note on a wish that failed only because the price service couldn't
+    /// be reached. ProxyWarmup retries these on its own.
+    static let unreachableNote = "Couldn't reach the stores just now. Pip will try again on its own, or tap Search again."
+    /// The proxy refused the app key. Also retried on its own, so fixing the
+    /// key on the server heals these without a new build.
+    static let keyRejectedNote = "Price search turned this version of Pip away. Please let the developer know."
+
     /// Fetch a price for a wish and update it in place.
     /// `autoPick` = true commits the best result (parent can swap later).
     static func fetchPrice(
@@ -61,7 +68,17 @@ enum WishFetcher {
             return
         }
 
-        // 3) search ladder: exact, then broader, then the parent's own words
+        // 3) make sure the proxy is awake (Render naps after a quiet stretch
+        //    and takes up to a minute to wake). Without this the first
+        //    searches failed fast and looked like "no match".
+        guard await ProxyWarmup.wake() else {
+            wish.status = .notFound
+            wish.statusNote = unreachableNote
+            Haptics.soft()
+            return
+        }
+
+        // 4) search ladder: exact, then broader, then the parent's own words
         var queries: [String] = [wish.cleanedQuery]
         queries += GiftIntelligence.broaderQueries(for: wish.cleanedQuery, details: interpretation)
         queries.append(wish.rawText)
@@ -72,6 +89,8 @@ enum WishFetcher {
         var onlyUntrusted = false
         var charged = false
         var limitStatus = 0     // 429 (too many this hour) or 503 (daily cap) from the proxy
+        var keyRejected = false
+        var failures = 0
         for query in queries.prefix(4) {
             do {
                 let result = try await searchWithRetry(query, priceService: priceService)
@@ -96,20 +115,36 @@ enum WishFetcher {
             } catch PriceServiceError.badResponse(let code) where code == 429 || code == 503 {
                 limitStatus = code
                 break
+            } catch PriceServiceError.badResponse(let code) where code == 401 || code == 403 {
+                keyRejected = true
+                break
             } catch {
+                // Two failed searches in a row with no answer at all: the
+                // service is down, so stop instead of burning the ladder.
+                failures += 1
+                if !gotAnyResponse && failures >= 2 { break }
                 continue
             }
         }
 
-        // 4) nothing at all: say why, and give Pip's alternatives
+        // 5) nothing at all: say why, and give Pip's alternatives
         guard !products.isEmpty else {
             wish.status = .notFound
+            if keyRejected {
+                wish.statusNote = keyRejectedNote
+                Haptics.soft()
+                return
+            }
+            if !gotAnyResponse && limitStatus == 0 {
+                // Not a real "no match": no ideas, and it retries on its own.
+                wish.statusNote = unreachableNote
+                Haptics.soft()
+                return
+            }
             if limitStatus == 429 {
                 wish.statusNote = "That's a lot of searching for one hour. Give \(Workshop.elfName) a little break and try again soon."
             } else if limitStatus == 503 {
                 wish.statusNote = "Price search is resting for the rest of today. Try again tomorrow."
-            } else if !gotAnyResponse {
-                wish.statusNote = "Couldn't reach the price service. Check your connection and try again."
             } else if onlyUntrusted {
                 wish.statusNote = "Only resellers had this one, and \(Workshop.elfName) sticks to big stores. Try one of these ideas."
             } else {
@@ -121,7 +156,7 @@ enum WishFetcher {
             return
         }
 
-        // 5) Pip puts the best match first, then we make it budget aware and
+        // 6) Pip puts the best match first, then we make it budget aware and
         //    varied: the pick is the best match that FITS the budget, and the
         //    other options spread across prices and stores instead of five
         //    near copies.
@@ -238,15 +273,17 @@ enum WishFetcher {
         return Double(wa.intersection(wb).count) / Double(wa.union(wb).count)
     }
 
-    /// One retry after a short pause covers Render waking from sleep, a
-    /// timeout, or a momentary busy notice from the price service.
+    /// One retry covers a timeout or a momentary hiccup. If the proxy went
+    /// back to sleep, wait for it to wake before the retry.
     private static func searchWithRetry(_ query: String, priceService: PriceService) async throws -> PriceQueryResult {
         do {
             return try await priceService.search(query: query, limit: 10)
         } catch PriceServiceError.badResponse(let code) where code == 429 || code == 503 {
             throw PriceServiceError.badResponse(code)     // a limit, not a hiccup: don't retry
+        } catch PriceServiceError.badResponse(let code) where code == 401 || code == 403 {
+            throw PriceServiceError.badResponse(code)     // wrong app key: retrying won't help
         } catch {
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            _ = await ProxyWarmup.wake(force: true)
             return try await priceService.search(query: query, limit: 10)
         }
     }

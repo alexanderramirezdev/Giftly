@@ -550,7 +550,8 @@ final class GiftIntelligence {
                 var items: [String] = []
                 for raw in result.items {
                     let item = Self.noDashes(raw)
-                    if !item.isEmpty, seen.insert(item.lowercased()).inserted { items.append(item) }
+                    guard Self.looksLikeWish(item) else { continue }
+                    if seen.insert(item.lowercased()).inserted { items.append(item) }
                 }
                 if !items.isEmpty {
                     let name = Self.noDashes(result.forName)
@@ -588,7 +589,7 @@ final class GiftIntelligence {
                         }
                     }
                     let words = item.split(separator: " ").count
-                    if words >= 1, words <= 8, !chatter.contains(item.lowercased()) {
+                    if words >= 1, words <= 8, !chatter.contains(item.lowercased()), looksLikeWish(item) {
                         out.append(noDashes(item))
                     }
                 }
@@ -596,6 +597,17 @@ final class GiftIntelligence {
         }
         var seen = Set<String>()
         return out.filter { seen.insert($0.lowercased()).inserted }
+    }
+
+    /// Final guard on anything read from a screenshot: drops keyboard keys,
+    /// stray letters, Messages labels and lone filler words.
+    static func looksLikeWish(_ item: String) -> Bool {
+        let t = item.trimmingCharacters(in: .whitespacesAndNewlines)
+        if ListScanner.isChrome(t) { return false }
+        let filler: Set<String> = ["the", "and", "but", "for", "you", "yes", "yeah", "okay", "this",
+                                   "that", "what", "message", "imessage", "photo", "image", "sticker"]
+        if filler.contains(t.lowercased()) { return false }
+        return true
     }
 
     /// Without the model: one wish per line, numbering and bullets stripped,
@@ -787,7 +799,8 @@ final class GiftIntelligence {
     private static let textedListInstructions = """
     You read a text message conversation where someone says what they want as a \
     gift. Lines starting with "Them:" are the other person; lines starting with \
-    "Me:" are the gift giver. Return every gift the other person asked for, plus \
+    "Me:" are the gift giver. The text was read off a screenshot, so ignore stray \
+    letters, keyboard keys, app labels and banners. Return every gift the other person asked for, plus \
     anything the gift giver suggested that the other person agreed to. Turn each \
     into a short, searchable phrase with brand, model, size and color kept (for \
     example "the blue one in a medium" after "Nike hoodie" becomes "blue Nike hoodie \

@@ -95,6 +95,20 @@ enum ListScanner {
 
         let observations: [VNRecognizedTextObservation] = (request.results ?? [])
             .sorted { $0.boundingBox.minY > $1.boundingBox.minY }
+
+        // Keyboard open in the screenshot? Its keys read as single letters
+        // ("Q W E R T Y", "Z", "123"). Find the top of the keyboard and drop
+        // it, plus the suggestion bar and the typing field just above it.
+        var bottomCut: CGFloat = 0.07
+        var keyTops: [CGFloat] = []
+        for o in observations {
+            guard let text = o.topCandidates(1).first?.string else { continue }
+            if isKeyboardKey(text) { keyTops.append(o.boundingBox.maxY) }
+        }
+        if keyTops.count >= 2, let keyboardTop = keyTops.max(), keyboardTop < 0.6 {
+            bottomCut = keyboardTop + 0.10
+        }
+
         var lines: [String] = []
         var contact = ""
         var lastSide = ""
@@ -105,6 +119,12 @@ enum ListScanner {
             let box = o.boundingBox            // normalized, origin bottom left
             // Status bar: the very top of the screen.
             if box.minY > 0.94 { continue }
+            // The Focus banner names the other person: "Mia has notifications silenced".
+            if let range = text.range(of: " has notifications silenced", options: .caseInsensitive) {
+                let name = String(text[..<range.lowerBound])
+                if contact.isEmpty, !name.isEmpty, name.count <= 30 { contact = name }
+                continue
+            }
             // Thread header: a short centered name near the top.
             if box.minY > 0.80 {
                 if contact.isEmpty, abs(box.midX - 0.5) < 0.15, text.count <= 30, !isChrome(text) {
@@ -112,8 +132,8 @@ enum ListScanner {
                 }
                 continue
             }
-            // Keyboard or the "iMessage" field at the bottom.
-            if box.maxY < 0.07 { continue }
+            // Keyboard, suggestion bar, or the "iMessage" field at the bottom.
+            if box.midY < bottomCut { continue }
             if isChrome(text) { continue }
 
             let side: String
@@ -135,9 +155,26 @@ enum ListScanner {
         return (lines, contact)
     }
 
+    /// A key on the on screen keyboard, as Vision reads it: one letter, a row
+    /// of single letters with spaces ("T E W"), or the 123 / space / return keys.
+    nonisolated static func isKeyboardKey(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        let keys: Set<String> = ["123", "abc", "space", "return", "go", "search", "send", "#+=", "🌐"]
+        if keys.contains(t.lowercased()) { return true }
+        return t.range(of: #"^[A-Za-z](\s+[A-Za-z])*$"#, options: .regularExpression) != nil
+    }
+
     /// Times, read receipts and other Messages labels that aren't anything anyone said.
     nonisolated static func isChrome(_ text: String) -> Bool {
-        let t = text.lowercased()
+        let t = text.lowercased().trimmingCharacters(in: .whitespaces)
+        // Too short to be a wish, or keyboard keys that slipped through.
+        if t.filter({ $0.isLetter || $0.isNumber }).count < 3 { return true }   // "PS5" still counts
+        if isKeyboardKey(t) { return true }
+        // Focus, typing field and other banners.
+        let phrases = ["has notifications silenced", "notify anyway", "is typing", "focus is on",
+                       "delivered quietly", "message +", "imessage +", "text message +", "rcs +",
+                       "tap to load preview", "tap to download"]
+        if phrases.contains(where: { t.contains($0) }) { return true }
         let exact: Set<String> = ["delivered", "read", "imessage", "text message", "today", "yesterday",
                                   "edited", "sent", "not delivered", "sms", "rcs", "keep", "copy",
                                   "reply", "more", "undo send", "message", "details", "<", "‹"]

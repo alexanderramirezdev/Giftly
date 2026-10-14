@@ -6,7 +6,8 @@
 //  gets its own wrapping paper and accessory (Snow Day beanie and scarf,
 //  Spring flower crown, Summer sunglasses, Autumn leaf and scarf). He
 //  breathes, blinks, wiggles his bow, hops when searching and pops his lid
-//  when cheering. At Christmas, Pip is the elf again (ElfView).
+//  when cheering. At Christmas he is green paper with a Santa hat and holly,
+//  and the elves stay in the background.
 //
 //  Drawn on the same 100 x 140 grid as ElfView so it drops into any spot
 //  that shows Pip. Internally it uses a 300 x 420 design space (the SVG it
@@ -42,9 +43,10 @@ enum BoxBuddy {
                         ribbonShade: Color(hex: "EAD3AC"), knot: Color(hex: "A8321E"),
                         pattern: .plaid, patternColor: Color(hex: "C2551E"))
         case .holiday:
-            return Wrap(box: Color(hex: "D23A48"), lid: Color(hex: "E25B67"), ribbon: Color(hex: "FFF4E2"),
-                        ribbonShade: Color(hex: "EADBC4"), knot: Color(hex: "F2B53C"),
-                        pattern: .dots, patternColor: Color(hex: "FFF4E2"))
+            // Green paper, red ribbon, gold dots, so the Santa hat stands out.
+            return Wrap(box: Color(hex: "2F8A57"), lid: Color(hex: "3FA06A"), ribbon: Color(hex: "D7263D"),
+                        ribbonShade: Color(hex: "A81C2E"), knot: Color(hex: "F2B53C"),
+                        pattern: .dots, patternColor: Color(hex: "F4C44E"))
         }
     }
 
@@ -122,6 +124,8 @@ enum BoxBuddy {
         switch season {
         case .snowDay:
             drawBeanie(top)
+        case .holiday:
+            drawSantaHat(top, t: t)
         case .spring:
             drawFlowerCrown(top, t: t)
         case .autumn:
@@ -288,6 +292,57 @@ enum BoxBuddy {
                    with: .color(Color(hex: "C9D8E8")))
         }
         SceneProps.dot(c, 150, 128, 18, .white)
+    }
+
+    /// Holiday Pip: a floppy Santa hat with a swinging pompom and a holly sprig.
+    private static func drawSantaHat(_ c: GraphicsContext, t: Double) {
+        let swing = CGFloat(sin(t * 2.2)) * 4
+        var cone = Path()
+        cone.move(to: CGPoint(x: 90, y: 202))
+        cone.addQuadCurve(to: CGPoint(x: 168, y: 112), control: CGPoint(x: 96, y: 120))
+        cone.addQuadCurve(to: CGPoint(x: 240 + swing, y: 152), control: CGPoint(x: 222, y: 110))
+        cone.addLine(to: CGPoint(x: 226 + swing, y: 160))
+        cone.addQuadCurve(to: CGPoint(x: 190, y: 136), control: CGPoint(x: 212, y: 134))
+        cone.addQuadCurve(to: CGPoint(x: 212, y: 202), control: CGPoint(x: 212, y: 160))
+        cone.closeSubpath()
+        c.fill(cone, with: .color(Color(hex: "D7263D")))
+
+        var fold = Path()
+        fold.move(to: CGPoint(x: 190, y: 136))
+        fold.addQuadCurve(to: CGPoint(x: 212, y: 202), control: CGPoint(x: 212, y: 160))
+        fold.addLine(to: CGPoint(x: 196, y: 202))
+        fold.addQuadCurve(to: CGPoint(x: 182, y: 138), control: CGPoint(x: 198, y: 160))
+        fold.closeSubpath()
+        c.fill(fold, with: .color(Color(hex: "A81C2E")))
+
+        SceneProps.dot(c, 236 + swing, 160, 17, .white)
+
+        // Fur brim.
+        c.fill(Path(roundedRect: CGRect(x: 74, y: 190, width: 152, height: 28), cornerRadius: 14),
+               with: .color(.white))
+        let tufts: [(CGFloat, CGFloat)] = [(92, 204), (118, 200), (146, 206), (174, 200), (202, 205)]
+        for tuft in tufts {
+            SceneProps.dot(c, tuft.0, tuft.1, 5, Color(hex: "EEF1F4"))
+        }
+
+        // Holly sprig on the brim.
+        var holly = c
+        holly.translateBy(x: 104, y: 190)
+        var left = Path()
+        left.move(to: .zero)
+        left.addQuadCurve(to: CGPoint(x: -26, y: -2), control: CGPoint(x: -14, y: -6))
+        left.addQuadCurve(to: CGPoint(x: -24, y: -18), control: CGPoint(x: -20, y: -10))
+        left.addQuadCurve(to: .zero, control: CGPoint(x: -12, y: -12))
+        holly.fill(left, with: .color(Color(hex: "1F7A45")))
+        var right = Path()
+        right.move(to: .zero)
+        right.addQuadCurve(to: CGPoint(x: 0, y: -26), control: CGPoint(x: 4, y: -14))
+        right.addQuadCurve(to: CGPoint(x: 16, y: -24), control: CGPoint(x: 8, y: -20))
+        right.addQuadCurve(to: .zero, control: CGPoint(x: 10, y: -12))
+        holly.fill(right, with: .color(Color(hex: "17663A")))
+        SceneProps.dot(holly, -2, 2, 5, Color(hex: "C8102E"))
+        SceneProps.dot(holly, 6, -2, 5, Color(hex: "C8102E"))
+        SceneProps.dot(holly, 2, -8, 5, Color(hex: "C8102E"))
     }
 
     private static func drawFlowerCrown(_ c: GraphicsContext, t: Double) {

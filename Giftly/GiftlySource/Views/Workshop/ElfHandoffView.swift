@@ -119,7 +119,7 @@ struct ElfHandoffView: View {
         case .reading:
             return ["\(Workshop.elfName) is reading your slip…",
                     "Squinting at the handwriting…",
-                    "Asking the head elf what that means…"]
+                    "Asking the elves what that means…"]
         case .searching:
             return ["Peeking in the Target aisle…",
                     "Checking Amazon's shelves…",
@@ -143,7 +143,7 @@ struct ElfHandoffView: View {
 
     private var accessibilityText: String {
         switch stage {
-        case .reading:   return "The elf is reading your wish."
+        case .reading:   return "\(Workshop.elfName) is reading your wish."
         case .searching: return "The elves are searching for real prices."
         case .found:     return "The elves found some options."
         }

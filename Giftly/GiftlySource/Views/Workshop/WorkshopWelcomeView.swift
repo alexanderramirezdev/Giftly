@@ -37,31 +37,31 @@ struct IntroView: View {
         VStack(spacing: 0) {
             topBar
             TabView(selection: $page) {
-                IntroPage(title: "Welcome to the workshop",
+                IntroPage(title: "Welcome to the Workshop",
                           message: "Pip keeps every wish for everyone you shop for in one calm place, with real prices from real stores.") {
                     WelcomeArt()
                 }
                 .tag(0)
 
-                IntroPage(title: "Say it like they said it",
+                IntroPage(title: "Say It Like They Said It",
                           message: "Type the wish in plain words. \(Workshop.elfName) finds the actual product at stores like Target, Walmart and Amazon, and picks the best match for your budget.") {
                     WishToProductArt()
                 }
                 .tag(1)
 
-                IntroPage(title: "Every date, one list",
-                          message: "Birthdays, Christmas, anniversaries. See what's coming up, what's picked, what's bought, and how the budget is holding.") {
+                IntroPage(title: "Every Date, One List",
+                          message: "Birthdays, Christmas, Anniversaries. See what's coming up, what's picked, what's bought, and how the budget is holding.") {
                     ComingUpArt()
                 }
                 .tag(2)
 
-                IntroPage(title: "Scan their Christmas list",
-                          message: "Snap a photo of a handwritten list and every wish lands on their page, ready to price.") {
+                IntroPage(title: "Scan Their Christmas List",
+                          message: "Snap a photo of a handwritten list, or pick a screenshot of the text they sent. Every wish lands on their page, ready to price.") {
                     ScanArt()
                 }
                 .tag(3)
 
-                IntroPage(title: "Private by design",
+                IntroPage(title: "Private by Design",
                           message: "Profiles stay on your iPhone and in your own iCloud. No accounts, no ads. Only a product search like \"lego race car\" ever leaves your phone.") {
                     PrivacyArt()
                 }
@@ -75,7 +75,7 @@ struct IntroView: View {
 
             Button(action: next) {
                 if page == pageCount - 1 {
-                    Label(isReplay ? "Done" : "Step into the workshop", systemImage: "gift.fill")
+                    Label(isReplay ? "Done" : "Step into the Workshop", systemImage: "gift.fill")
                 } else {
                     Text("Next")
                 }

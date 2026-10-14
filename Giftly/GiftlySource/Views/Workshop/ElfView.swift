@@ -2,8 +2,8 @@
 //  ElfView.swift
 //  Giftly
 //
-//  Pip, the workshop's head elf (in the Holiday Workshop; the rest of the
-//  year Pip is a gift box buddy, see BoxBuddy.swift). Drawn entirely in code (no image assets)
+//  The workshop elves (the background crew). Pip himself is always the gift
+//  box buddy, see BoxBuddy.swift; ElfView routes Pip there. Drawn entirely in code (no image assets)
 //  on a 100 x 140 grid: big expressive eyes, brows, droopy hat with a fur
 //  brim, curly bell toed boots, and a wrapped gift he hugs while idle.
 //  Four poses, all animated, all static under Reduce Motion.
@@ -115,8 +115,9 @@ struct ElfView: View {
         season ?? GiftlySeason.shown(setting: seasonSetting, preview: previewTouch)
     }
 
-    /// Pip is an elf in the Holiday Workshop and a gift box buddy the rest of the year.
-    private var isBoxBuddy: Bool { style == nil && shownSeason != .holiday }
+    /// Pip is always the gift box buddy (a festive box with a Santa hat at
+    /// Christmas). Only the workshop crew in the background are elves.
+    private var isBoxBuddy: Bool { style == nil }
 
     /// The look actually drawn (elf).
     var look: ElfStyle {

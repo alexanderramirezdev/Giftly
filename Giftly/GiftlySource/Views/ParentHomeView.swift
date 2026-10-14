@@ -21,6 +21,7 @@ struct ParentHomeView: View {
     @State private var showingScan = false
     @State private var showingTexts = false
     @State private var showingSettings = false
+    @State private var showingNewPerson = false
     @State private var ideasPerson: Person?
     @State private var banner: String?
 
@@ -35,6 +36,7 @@ struct ParentHomeView: View {
                 .sheet(isPresented: $showingScan) { ScanListView() }
                 .sheet(isPresented: $showingTexts) { ScanListView(source: .texts) }
                 .sheet(isPresented: $showingSettings) { SettingsView() }
+                .sheet(isPresented: $showingNewPerson) { PersonEditView(person: nil) }
                 .sheet(item: $ideasPerson) { person in GiftIdeasView(person: person) }
                 .background(contactPicker)
                 .overlay(alignment: .top) { bannerView }
@@ -109,7 +111,7 @@ struct ParentHomeView: View {
     private var comingUpCard: some View {
         let items: [Occasion] = upcomingOccasions
         return VStack(alignment: .leading, spacing: 10) {
-            GiftlySectionHeader(title: "Coming up", systemImage: "calendar")
+            GiftlySectionHeader(title: "Coming Up", systemImage: "calendar")
             GiftlyCard(padding: 6) {
                 VStack(spacing: 0) {
                     ForEach(items.indices, id: \.self) { idx in
@@ -122,15 +124,21 @@ struct ParentHomeView: View {
 
     private func comingUpRow(_ occasion: Occasion, showDivider: Bool) -> some View {
         VStack(spacing: 0) {
-            NavigationLink {
-                OccasionDetailView(occasion: occasion)
-            } label: {
-                UpcomingRow(occasion: occasion)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())   // the whole row is tappable, not just the text
+            SwipeToDelete(itemName: occasion.title,
+                          detail: "Its gift ideas are deleted too.") {
+                withAnimation { context.delete(occasion) }
+                try? context.save()
+            } content: {
+                NavigationLink {
+                    OccasionDetailView(occasion: occasion)
+                } label: {
+                    UpcomingRow(occasion: occasion)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())   // the whole row is tappable, not just the text
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             if showDivider { Divider().padding(.leading, 50) }
         }
     }
@@ -142,8 +150,9 @@ struct ParentHomeView: View {
             GiftlyCard(padding: 6) {
                 VStack(spacing: 0) {
                     ForEach(everyone.indices, id: \.self) { idx in
-                        personRow(everyone[idx], showDivider: idx < everyone.count - 1)
+                        personRow(everyone[idx], showDivider: true)
                     }
+                    addPersonRow
                 }
             }
         }
@@ -154,6 +163,7 @@ struct ParentHomeView: View {
             SwipeToDelete(itemName: person.firstName,
                           detail: "Their occasions and gift ideas are deleted too.") {
                 withAnimation { context.delete(person) }
+                try? context.save()
             } content: {
                 NavigationLink {
                     PersonDetailView(person: person)
@@ -167,6 +177,30 @@ struct ParentHomeView: View {
             }
             if showDivider { Divider().padding(.leading, 56) }
         }
+    }
+
+    /// Adding someone new, right in the People card.
+    private var addPersonRow: some View {
+        Button {
+            Haptics.tap()
+            showingNewPerson = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "plus")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(.tint.opacity(0.15)))
+                Text("Add Someone")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.tint)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Past events live behind one row, not listed out on the home screen.
@@ -183,7 +217,7 @@ struct ParentHomeView: View {
                         .foregroundStyle(.tint)
                         .frame(width: 32)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Past events").font(.body.weight(.semibold)).foregroundStyle(.primary)
+                        Text("Past Events").font(.body.weight(.semibold)).foregroundStyle(.primary)
                         Text("\(count) \(noun), with what you gave")
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -225,8 +259,11 @@ struct ParentHomeView: View {
 
     private var addMenu: some View {
         Menu {
+            Button { showingNewPerson = true } label: {
+                Label("Add Someone", systemImage: "person.badge.plus")
+            }
             Button { showingQuickAdd = true } label: {
-                Label("Add a gift idea", systemImage: "gift")
+                Label("Add a Gift Idea", systemImage: "gift")
             }
             Button { showingScan = true } label: {
                 Label("Scan a wish list", systemImage: "doc.viewfinder")

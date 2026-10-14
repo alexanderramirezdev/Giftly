@@ -257,14 +257,14 @@ struct PersonEditView: View {
                     TextField(profile.storesPlaceholder, text: $favoriteStores)
                     TextField(profile.devicesPlaceholder, text: $devices)
                 } header: {
-                    Text("What they love")
+                    Text("What They Love")
                 }
 
                 if thinking || !liveIdeas.isEmpty {
                     Section {
                         liveIdeasView
                     } header: {
-                        Text("\(Workshop.elfName)'s ideas")
+                        Text("\(Workshop.elfName)'s Ideas")
                     } footer: {
                         Text("Made on your iPhone, free. Tap the ones you like; prices are looked up only for those, after you save.")
                     }
@@ -283,14 +283,14 @@ struct PersonEditView: View {
                     TextField("Doesn't like", text: $dislikes, axis: .vertical)
                         .lineLimit(1...3)
                 } header: {
-                    Text("Skip these")
+                    Text("Skip These")
                 } footer: {
                     Text("\(Workshop.elfName) uses this on your iPhone to suggest gifts. It syncs only to your own iCloud.")
                 }
             }
             .scrollContentBackground(.hidden)
             .giftlyBackground()
-            .navigationTitle(person == nil ? "Add someone" : "Edit Person")
+            .navigationTitle(person == nil ? "Add Someone" : "Edit Person")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

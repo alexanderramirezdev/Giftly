@@ -17,7 +17,10 @@ struct OccasionDetailView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     @State private var showingAddWish = false
+    @State private var showingEdit = false
+    @State private var confirmingDelete = false
 
     var body: some View {
         List {
@@ -102,6 +105,20 @@ struct OccasionDetailView: View {
         .navigationTitle(occasion.title)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if occasion.person != nil {
+                        Button { showingEdit = true } label: {
+                            Label("Edit Occasion", systemImage: "pencil")
+                        }
+                    }
+                    Button(role: .destructive) { confirmingDelete = true } label: {
+                        Label("Delete Occasion", systemImage: "trash")
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showingAddWish = true } label: {
                     Label("Add a gift idea", systemImage: "plus")
                 }
@@ -109,6 +126,32 @@ struct OccasionDetailView: View {
         }
         .sheet(isPresented: $showingAddWish) {
             AddWishView(occasion: occasion)
+        }
+        .sheet(isPresented: $showingEdit) {
+            if let person = occasion.person {
+                OccasionEditView(person: person, occasion: occasion)
+            }
+        }
+        .confirmationDialog("Delete \(occasion.title)?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive, action: deleteOccasion)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Its gift ideas are deleted too.")
+        }
+    }
+}
+
+extension OccasionDetailView {
+    /// Leave the screen first, then delete, so the view never shows a
+    /// deleted occasion.
+    fileprivate func deleteOccasion() {
+        let doomed = occasion
+        Haptics.success()
+        dismiss()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            context.delete(doomed)
+            try? context.save()
         }
     }
 }
@@ -181,13 +224,21 @@ struct WishRow: View {
             Text("\(Workshop.elfName) is checking the shelves…")
                 .font(.caption).foregroundStyle(.tint)
         case .notFound:
-            Text(wish.suggestions.isEmpty ? "No match yet, tap to try again" : "No exact match, tap for \(Workshop.elfName)'s ideas")
+            Text(notFoundLine)
                 .font(.caption).foregroundStyle(.orange)
         case .idea:
             Text(wish.statusNote.isEmpty ? "Idea" : wish.statusNote)
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(2)
         }
+    }
+
+    private var notFoundLine: String {
+        if wish.statusNote == WishFetcher.unreachableNote {
+            return "Couldn't reach the stores, tap to try again"
+        }
+        if wish.suggestions.isEmpty { return "No match yet, tap to try again" }
+        return "No exact match, tap for \(Workshop.elfName)'s ideas"
     }
 
     @ViewBuilder private var statusIcon: some View {

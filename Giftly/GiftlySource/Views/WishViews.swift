@@ -39,7 +39,7 @@ struct AddWishView: View {
                         .lineLimit(1...3)
                         .submitLabel(.done)
                 } header: {
-                    Text("What do they want?")
+                    Text("What Do They Want?")
                 } footer: {
                     Text("Add it in plain words. Pip finds the best price in the background while you keep going.")
                 }
@@ -52,7 +52,7 @@ struct AddWishView: View {
                     }
                 }
             }
-            .navigationTitle("Add a gift idea")
+            .navigationTitle("Add a Gift Idea")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -141,14 +141,14 @@ struct QuickAddWishView: View {
                             .foregroundStyle(GiftlyTheme.evergreen)
                     }
                 } header: {
-                    Text("What do they want?")
+                    Text("What Do They Want?")
                 } footer: {
                     Text("Add as many as you like. Prices fill in while you keep going.")
                 }
             }
             .scrollContentBackground(.hidden)
             .giftlyBackground()
-            .navigationTitle("Add a gift idea")
+            .navigationTitle("Add a Gift Idea")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
@@ -319,6 +319,7 @@ struct ProductResultRow: View {
 struct WishDetailView: View {
     @Bindable var wish: Wish
     @Environment(\.openURL) private var openURL
+    @Environment(\.modelContext) private var context
     @Environment(GiftIntelligence.self) private var brain
     @Environment(Entitlements.self) private var entitlements
     @Environment(AppSession.self) private var session
@@ -326,11 +327,39 @@ struct WishDetailView: View {
     @State private var noteTone: NoteTone = .warm
     @State private var writingNote = false
     @State private var openingStore = false
+    @State private var draft = ""
+    @FocusState private var editing: Bool
+
+    private var draftChanged: Bool {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed != wish.rawText
+    }
 
     var body: some View {
         List {
-            Section("Wish") {
-                Text(wish.rawText).font(.body)
+            Section {
+                // Tap to fix the wording, then search again. No need to
+                // delete the wish and start over.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    TextField("What do they want?", text: $draft, axis: .vertical)
+                        .font(.body)
+                        .lineLimit(1...3)
+                        .focused($editing)
+                        .submitLabel(.search)
+                        .onSubmit(searchDraft)
+                    if !editing && !draftChanged {
+                        Image(systemName: "pencil")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if draftChanged {
+                    Button(action: searchDraft) {
+                        Label("Search for this instead", systemImage: "magnifyingglass")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .disabled(!session.networkAllowed)
+                }
                 // Only show what Pip searched / read if it adds something.
                 if !wish.cleanedQuery.isEmpty,
                    wish.cleanedQuery.caseInsensitiveCompare(wish.rawText) != .orderedSame {
@@ -342,6 +371,10 @@ struct WishDetailView: View {
                     Label(wish.detailsRaw, systemImage: "tag")
                         .font(.caption).foregroundStyle(GiftlyTheme.evergreen)
                 }
+            } header: {
+                Text("Wish")
+            } footer: {
+                Text("Tap the wish to change the wording.")
             }
 
             if wish.status == .finding {
@@ -369,7 +402,7 @@ struct WishDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } header: {
-                    Text("\(Workshop.elfName)'s pick")
+                    Text("\(Workshop.elfName)'s Pick")
                 }
             }
 
@@ -392,7 +425,7 @@ struct WishDetailView: View {
                         }
                     }
                 } header: {
-                    Text("More options")
+                    Text("More Options")
                 } footer: {
                     Text("Tap a gift to see it at the store. Tap Pick to make it the one.")
                 }
@@ -408,8 +441,8 @@ struct WishDetailView: View {
                     ForEach(wish.suggestions, id: \.self) { idea in
                         Button {
                             Haptics.tap()
-                            wish.rawText = idea
-                            retry()
+                            draft = idea
+                            searchDraft()
                         } label: {
                             Label(idea, systemImage: "sparkle.magnifyingglass")
                         }
@@ -426,7 +459,7 @@ struct WishDetailView: View {
                         }
                     }
                 } header: {
-                    Text(wish.suggestions.isEmpty ? "No match yet" : "\(Workshop.elfName)'s ideas")
+                    Text(wish.suggestions.isEmpty ? "No Match Yet" : "\(Workshop.elfName)'s Ideas")
                 }
             }
 
@@ -467,7 +500,7 @@ struct WishDetailView: View {
                 }
                 .buttonStyle(.borderless)
             } header: {
-                Text("Card note")
+                Text("Card Note")
             }
 
             Section {
@@ -491,6 +524,31 @@ struct WishDetailView: View {
         }
         .navigationTitle("Wish")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { if draft.isEmpty { draft = wish.rawText } }
+        .onChange(of: wish.rawText) { _, newText in
+            if !editing { draft = newText }
+        }
+    }
+
+    /// Saves the new wording, clears the old results, and searches again.
+    private func searchDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            draft = wish.rawText
+            return
+        }
+        editing = false
+        Haptics.tap()
+        if text != wish.rawText {
+            wish.rawText = text
+            wish.cleanedQuery = ""
+            wish.detailsRaw = ""
+            wish.matchReason = ""
+            for m in wish.matches ?? [] { context.delete(m) }
+            wish.matches = []
+        }
+        draft = text
+        retry()
     }
 
     private func buyBar(for match: ProductMatch) -> some View {

@@ -56,6 +56,7 @@ struct GiftlyApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .keepsPriceServiceAwake()   // wakes the Render proxy, retries stranded wishes
                 .tint(GiftlyTheme.cranberry)
                 .environment(session)
                 .environment(Entitlements.shared)

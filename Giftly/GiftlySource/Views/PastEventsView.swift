@@ -60,7 +60,7 @@ struct PastEventsView: View {
             }
         }
         .giftlyBackground()
-        .navigationTitle("Past events")
+        .navigationTitle("Past Events")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
