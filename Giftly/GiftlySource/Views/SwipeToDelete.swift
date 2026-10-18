@@ -18,12 +18,17 @@ struct SwipeToDelete<Content: View>: View {
     @State private var offset: CGFloat = 0
     @State private var startOffset: CGFloat = 0
     @State private var confirming = false
+    /// True during a sideways swipe (and a beat after). Disables the row so
+    /// lifting your finger at the end of a swipe doesn't count as a tap and
+    /// open the card.
+    @State private var swiping = false
 
     private let revealWidth: CGFloat = 84
 
     var body: some View {
         ZStack(alignment: .trailing) {
             content()
+                .disabled(swiping)
                 .offset(x: offset)
                 .simultaneousGesture(drag)
 
@@ -89,6 +94,7 @@ struct SwipeToDelete<Content: View>: View {
                 let dx = value.translation.width
                 // Only horizontal swipes; vertical drags keep scrolling the page.
                 guard abs(dx) > abs(value.translation.height) * 1.5 else { return }
+                if !swiping { swiping = true }
                 offset = min(0, max(-revealWidth - 30, startOffset + dx))
             }
             .onEnded { _ in
@@ -97,6 +103,12 @@ struct SwipeToDelete<Content: View>: View {
                 }
                 startOffset = offset
                 if offset < 0 { Haptics.tap() }
+                if swiping {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        swiping = false
+                    }
+                }
             }
     }
 
