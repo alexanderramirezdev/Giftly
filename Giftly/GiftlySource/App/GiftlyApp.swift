@@ -29,7 +29,7 @@ struct GiftlyApp: App {
         let config = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .none                 // local-only for first run; flip to .automatic once iCloud capability is added
+            cloudKitDatabase: .automatic           // flip to .none to disable sync while testing
         )
         do {
             return try ModelContainer(for: schema, configurations: [config])
@@ -43,7 +43,8 @@ struct GiftlyApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .tint(GiftlyTheme.cranberry)
+                .preferredColorScheme(.dark)
+                .tint(Workshop.brass)
                 .environment(session)
                 .environment(Entitlements.shared)
                 .environment(GiftIntelligence.shared)

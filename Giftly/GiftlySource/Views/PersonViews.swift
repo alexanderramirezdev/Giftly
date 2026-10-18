@@ -28,7 +28,6 @@ struct PersonDetailView: View {
                     } label: {
                         Label("Gift ideas for \(person.name)", systemImage: "sparkles")
                     }
-                    .listRowBackground(GiftlyTheme.card)
                 }
             }
 
@@ -38,7 +37,6 @@ struct PersonDetailView: View {
                     ContentUnavailableView("No occasions",
                                            systemImage: "calendar",
                                            description: Text("Add a birthday, holiday, or any gift occasion."))
-                        .listRowBackground(Color.clear)
                 }
                 ForEach(occasions, id: \.persistentModelID) { occasion in
                     NavigationLink {
@@ -46,12 +44,10 @@ struct PersonDetailView: View {
                     } label: {
                         UpcomingRow(occasion: occasion)
                     }
-                    .listRowBackground(GiftlyTheme.card)
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .giftlyBackground()
+        .workshopScene()
         .navigationTitle(person.name)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

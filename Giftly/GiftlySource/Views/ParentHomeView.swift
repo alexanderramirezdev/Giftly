@@ -2,9 +2,10 @@
 //  ParentHomeView.swift
 //  Giftly
 //
-//  The parent's main screen: people + upcoming occasions sorted by date,
-//  plus the "Ideas" entry. iPad gets NavigationSplitView; iPhone gets a
-//  stack — size-class driven so it adapts without a rebuild.
+//  The workshop floor: Pip the elf greets you, the deadline board lists
+//  what's coming up, and everyone you shop for has a gift that gets
+//  livelier as their date nears. A conveyor belt of gifts runs along the
+//  bottom. Data and navigation are unchanged from before.
 //
 
 import SwiftUI
@@ -17,108 +18,69 @@ struct ParentHomeView: View {
     @Query(sort: \Person.name) private var people: [Person]
 
     @State private var showingAddPerson = false
-    @State private var selectedPerson: Person?
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                // Warm themed base + living seasonal background.
-                GiftlyTheme.background.ignoresSafeArea()
-                GiftlyAtmosphereView(season: atmosphereSeason, giftFullness: atmosphereFullness)
-                    .ignoresSafeArea()
+            List {
+                Section {
+                    ElfGreetingRow(hasPeople: !people.isEmpty, next: upcomingOccasions.first)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
 
-                if people.isEmpty {
-                    HomeEmptyState { showingAddPerson = true }
-                } else {
-                    ScrollView {
-                        VStack(spacing: 22) {
-                            // Nudge card
-                            if !needsAttention.isEmpty {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    GiftlySectionHeader(title: "Needs your attention",
-                                                        systemImage: "bell.badge",
-                                                        tint: .orange)
-                                    GiftlyCard(padding: 6) {
-                                        VStack(spacing: 0) {
-                                            ForEach(Array(needsAttention.enumerated()), id: \.element.persistentModelID) { idx, occasion in
-                                                NavigationLink {
-                                                    OccasionDetailView(occasion: occasion)
-                                                } label: {
-                                                    AttentionNudge(occasion: occasion)
-                                                        .padding(.horizontal, 10)
-                                                        .padding(.vertical, 12)
-                                                }
-                                                .buttonStyle(.plain)
-                                                if idx < needsAttention.count - 1 { Divider().padding(.leading, 50) }
-                                            }
-                                        }
-                                    }
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: GiftlyTheme.cardRadius, style: .continuous)
-                                            .stroke(Color.orange.opacity(0.35), lineWidth: 1.5)
-                                    )
-                                }
+                if !upcomingOccasions.isEmpty {
+                    Section {
+                        ForEach(upcomingOccasions, id: \.persistentModelID) { occasion in
+                            NavigationLink {
+                                OccasionDetailView(occasion: occasion)
+                            } label: {
+                                UpcomingRow(occasion: occasion)
                             }
-
-                            // Coming up card
-                            if !upcomingOccasions.isEmpty {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    GiftlySectionHeader(title: "Coming up", systemImage: "calendar")
-                                    GiftlyCard(padding: 6) {
-                                        VStack(spacing: 0) {
-                                            ForEach(Array(upcomingOccasions.enumerated()), id: \.element.persistentModelID) { idx, occasion in
-                                                NavigationLink {
-                                                    OccasionDetailView(occasion: occasion)
-                                                } label: {
-                                                    UpcomingRow(occasion: occasion)
-                                                        .padding(.horizontal, 10)
-                                                        .padding(.vertical, 12)
-                                                }
-                                                .buttonStyle(.plain)
-                                                if idx < upcomingOccasions.count - 1 { Divider().padding(.leading, 50) }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // People card
-                            VStack(alignment: .leading, spacing: 10) {
-                                GiftlySectionHeader(title: "People", systemImage: "person.2")
-                                GiftlyCard(padding: 6) {
-                                    VStack(spacing: 0) {
-                                        ForEach(Array(people.enumerated()), id: \.element.persistentModelID) { idx, person in
-                                            NavigationLink {
-                                                PersonDetailView(person: person)
-                                            } label: {
-                                                PersonRow(person: person)
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 12)
-                                            }
-                                            .buttonStyle(.plain)
-                                            if idx < people.count - 1 { Divider().padding(.leading, 56) }
-                                        }
-                                    }
-                                }
-                            }
+                            .workshopRow()
                         }
-                        .padding(.horizontal, GiftlyTheme.gutter)
-                        .padding(.top, 8)
-                        .padding(.bottom, 40)
-                        .frame(maxWidth: 640)
-                        .frame(maxWidth: .infinity)
+                    } header: {
+                        WorkshopHeader("On the deadline board")
                     }
                 }
+
+                Section {
+                    if people.isEmpty {
+                        ContentUnavailableView(
+                            "No one here yet",
+                            systemImage: "gift",
+                            description: Text("Add someone you give gifts to, then start their wishlist.")
+                        )
+                        .listRowBackground(Color.clear)
+                    }
+                    ForEach(people, id: \.persistentModelID) { person in
+                        NavigationLink {
+                            PersonDetailView(person: person)
+                        } label: {
+                            PersonRow(person: person)
+                        }
+                        .workshopRow()
+                    }
+                    .onDelete(perform: deletePeople)
+                } header: {
+                    WorkshopHeader("Your people")
+                }
+            }
+            .workshopScene()
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                GiftConveyor()
             }
             .navigationTitle("Giftly")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { onLock() } label: {
-                        Label("Kid mode", systemImage: "lock")
+                    if AppSession.kidModeEnabled {
+                        Button { onLock() } label: {
+                            Label("Kid mode", systemImage: "lock")
+                        }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { Haptics.tap(); showingAddPerson = true } label: {
+                    Button { showingAddPerson = true } label: {
                         Label("Add person", systemImage: "plus")
                     }
                 }
@@ -127,34 +89,6 @@ struct ParentHomeView: View {
                 PersonEditView()
             }
         }
-    }
-
-    /// Occasions within 3 weeks that have nothing picked yet.
-    private var needsAttention: [Occasion] {
-        people
-            .flatMap { $0.occasions ?? [] }
-            .filter { $0.needsAttention }
-            .sorted { $0.daysUntilNext < $1.daysUntilNext }
-            .prefix(3)
-            .map { $0 }
-    }
-
-    /// The season for the living background: from the nearest upcoming
-    /// occasion's date when there is one, else the current month.
-    private var atmosphereSeason: GiftlySeason? {
-        if let next = upcomingOccasions.first {
-            let m = Calendar.current.component(.month, from: next.date)
-            // Christmas-type occasions always read as winter regardless of date.
-            if next.kind == .christmas { return .winter }
-            return GiftlySeason.forMonth(m)
-        }
-        return nil
-    }
-
-    /// How full the gift stack looks: fraction of the nearest occasion picked.
-    private var atmosphereFullness: Double {
-        guard let next = upcomingOccasions.first, next.wishCount > 0 else { return 1.0 }
-        return Double(next.sortedWishesPicked) / Double(next.wishCount)
     }
 
     private var upcomingOccasions: [Occasion] {
@@ -171,6 +105,47 @@ struct ParentHomeView: View {
     }
 }
 
+// MARK: - Elf greeting
+
+struct ElfGreetingRow: View {
+    let hasPeople: Bool
+    let next: Occasion?
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            ElfView(pose: .idle, size: 72)
+
+            Text(message)
+                .font(.workshop(15, weight: .medium))
+                .foregroundStyle(Workshop.cream)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(12)
+                .background(Workshop.woodLight, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Workshop.grain, lineWidth: 1)
+                )
+                .padding(.bottom, 14)
+        }
+    }
+
+    private var message: String {
+        if !hasPeople {
+            return "Hi, I'm \(Workshop.elfName). Tell me who you shop for and I'll get a workbench ready."
+        }
+        guard let o = next else {
+            return "The workbench is quiet. Add an occasion and I'll start the countdown."
+        }
+        let d = o.daysUntilNext
+        switch d {
+        case 0:      return "It's today! \(o.title) is ready to unwrap."
+        case 1:      return "\(o.title) is tomorrow. Last call for wrapping!"
+        case 2...7:  return "\(o.title) is \(d) days out. The elves are hustling."
+        default:     return "\(o.title) is \(d) days away. Want me to check the shelves?"
+        }
+    }
+}
+
 // MARK: - Rows
 
 struct UpcomingRow: View {
@@ -178,37 +153,32 @@ struct UpcomingRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(GiftlyTheme.cranberry.opacity(0.12)).frame(width: 38, height: 38)
-                Image(systemName: occasion.kind.symbol)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(GiftlyTheme.cranberry)
-            }
+            GiftBoxMark(color: Color(hex: occasion.person?.colorHex ?? "#4C8BF5"),
+                        stage: GiftStage.forDays(occasion.daysUntilNext),
+                        size: 46,
+                        seed: Double(occasion.title.utf8.count % 9) * 0.7)
             VStack(alignment: .leading, spacing: 2) {
-                Text(occasion.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                HStack(spacing: 6) {
-                    Text(countdownText)
-                    Text("·").foregroundStyle(.tertiary)
-                    Text(occasion.progressLine)
-                }
-                .font(.caption).foregroundStyle(.secondary)
+                Text(occasion.title)
+                    .font(.system(size: 17, weight: .semibold, design: .serif))
+                    .foregroundStyle(Workshop.cream)
+                Text(countdownText)
+                    .font(.caption)
+                    .foregroundStyle(Workshop.dimCream)
             }
             Spacer()
             if occasion.hasBudget {
                 Text(budgetText)
-                    .font(.caption.monospacedDigit().weight(.medium))
-                    .foregroundStyle(GiftlyTheme.evergreen)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(GiftlyTheme.evergreen.opacity(0.10)))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Workshop.dimCream)
             }
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
         }
     }
 
     private var countdownText: String {
         let d = occasion.daysUntilNext
-        if d == 0 { return "Today 🎉" }
-        if d == 1 { return "Tomorrow" }
+        if d == 0 { return "Today! Time to unwrap" }
+        if d == 1 { return "Tomorrow, last call for wrapping" }
+        if d <= 7 { return "\(d) days, the elves are hustling" }
         return "in \(d) days"
     }
 
@@ -226,108 +196,23 @@ struct PersonRow: View {
         HStack(spacing: 12) {
             Circle()
                 .fill(Color(hex: person.colorHex))
-                .frame(width: 40, height: 40)
-                .overlay(Text(initials).font(.subheadline.bold()).foregroundStyle(.white))
+                .frame(width: 34, height: 34)
+                .overlay(Circle().stroke(Workshop.brass.opacity(0.7), lineWidth: 1.5))
+                .overlay(Text(initials).font(.caption.bold()).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 2) {
-                Text(person.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                Text(person.name)
+                    .font(.system(size: 17, weight: .semibold, design: .serif))
+                    .foregroundStyle(Workshop.cream)
                 if !person.relationship.isEmpty {
-                    Text(person.relationship).font(.caption).foregroundStyle(.secondary)
+                    Text(person.relationship)
+                        .font(.caption)
+                        .foregroundStyle(Workshop.dimCream)
                 }
             }
-            Spacer()
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
         }
     }
 
     private var initials: String {
         person.name.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined()
-    }
-}
-
-
-// MARK: - Warm empty state (first run)
-
-struct HomeEmptyState: View {
-    let onAdd: () -> Void
-    @State private var appeared = false
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(width: 120, height: 120)
-                Image(systemName: "gift.fill")
-                    .font(.system(size: 52))
-                    .foregroundStyle(.tint)
-            }
-            .scaleEffect(appeared ? 1 : 0.6)
-            .opacity(appeared ? 1 : 0)
-
-            VStack(spacing: 8) {
-                Text("Let's make gifting easy")
-                    .font(.title2.bold())
-                Text("Add someone you love, and Giftly keeps every wish and the best price in one calm place.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 12)
-
-            Button {
-                Haptics.tap()
-                onAdd()
-            } label: {
-                Label("Add your first person", systemImage: "plus")
-            }
-            .buttonStyle(GiftlyPrimaryButtonStyle())
-            .frame(maxWidth: 360)
-            .padding(.top, 4)
-            .opacity(appeared ? 1 : 0)
-
-            Spacer()
-            Spacer()
-        }
-        .padding(32)
-        .frame(maxWidth: 640)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { appeared = true }
-        }
-    }
-}
-
-// MARK: - Attention nudge row
-
-struct AttentionNudge: View {
-    let occasion: Occasion
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: occasion.kind.symbol)
-                .foregroundStyle(.orange)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(occasion.title).font(.body.weight(.semibold))
-                Text(nudgeLine).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-        }
-    }
-
-    private var nudgeLine: String {
-        let d = occasion.daysUntilNext
-        let when: String
-        if d == 0 { when = "is today" }
-        else if d == 1 { when = "is tomorrow" }
-        else { when = "in \(d) days" }
-        if occasion.wishCount == 0 {
-            return "\(when) · no wishes added yet"
-        }
-        return "\(when) · nothing picked yet"
     }
 }

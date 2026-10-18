@@ -17,7 +17,11 @@ struct RootView: View {
     var body: some View {
         Group {
             if !session.hasCompletedOnboarding {
-                OnboardingView()
+                if AppSession.kidModeEnabled {
+                    OnboardingView()
+                } else {
+                    WorkshopWelcomeView()
+                }
             } else {
                 switch session.role {
                 case .parent:
@@ -37,7 +41,7 @@ struct RootView: View {
                 },
                 onCancel: { showingGate = false }
             )
-            .presentationDetents([.large])
+            .presentationDetents([.medium])
         }
     }
 }
@@ -70,15 +74,13 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 Button {
-                    // COPPA-safe: entering grown-up mode ALWAYS requires the
-                    // parental gate, UNLESS the device affirmatively says adult.
-                    // Unknown age or child => gate required.
-                    if session.deviceSaysAdult {
+                    // Parent requires the gate (unless the device age signal already says adult)
+                    if session.shouldDefaultToKid {
+                        showingGate = true
+                    } else {
                         session.role = .parent
                         session.clearGate()
                         session.hasCompletedOnboarding = true
-                    } else {
-                        showingGate = true
                     }
                 } label: {
                     Label("I'm a grown-up", systemImage: "person.fill")
@@ -104,7 +106,6 @@ struct OnboardingView: View {
         .padding()
         .frame(maxWidth: 640)                     // iPad: constrain-and-center
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .giftlyBackground(.full)
         .sheet(isPresented: $showingGate) {
             ParentalGateView(
                 onSuccess: {
@@ -115,7 +116,7 @@ struct OnboardingView: View {
                 },
                 onCancel: { showingGate = false }
             )
-            .presentationDetents([.large])
+            .presentationDetents([.medium])
         }
     }
 }
